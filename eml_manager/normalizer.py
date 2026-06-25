@@ -38,16 +38,13 @@ def normalize_text(text: str, limit: int = 200) -> str:
 
 
 def make_filename(
-    subject: str,
     timestamp: str,
     sender: str,
-    filename_limit: int = 200,
     existing: Optional[Set[str]] = None,
 ) -> str:
     """Produce a unique, filesystem-safe .eml filename."""
-    safe_subject = normalize_text(subject, limit=max(filename_limit - 80, 20))
     safe_sender = normalize_text(sender, limit=50)
-    base = f"{safe_subject}_{timestamp}_{safe_sender}"
+    base = f"{timestamp}_{safe_sender}"
     candidate = f"{base}.eml"
 
     if existing is None or candidate not in existing:

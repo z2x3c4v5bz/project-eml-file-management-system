@@ -51,13 +51,7 @@ class Processor:
         dest_folder.mkdir(parents=True, exist_ok=True)
 
         existing_names = {p.name for p in dest_folder.glob("*.eml")}
-        filename = make_filename(
-            pure_subject,
-            timestamp,
-            meta["sender"],
-            self.config.filename_limit,
-            existing_names,
-        )
+        filename = make_filename(timestamp, meta["sender"], existing_names)
         dest_path = dest_folder / filename
 
         file_path.replace(dest_path)

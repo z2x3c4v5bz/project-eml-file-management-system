@@ -48,21 +48,21 @@ class TestNormalizeText:
 
 class TestMakeFilename:
     def test_basic(self):
-        name = make_filename("Hello World", "20260624143055", "alice")
-        assert name == "Hello_World_20260624143055_alice.eml"
+        name = make_filename("20260624143055", "alice")
+        assert name == "20260624143055_alice.eml"
 
     def test_conflict_appends_counter(self):
-        existing = {"Hello_World_20260624143055_alice.eml"}
-        name = make_filename("Hello World", "20260624143055", "alice", existing=existing)
-        assert name != "Hello_World_20260624143055_alice.eml"
+        existing = {"20260624143055_alice.eml"}
+        name = make_filename("20260624143055", "alice", existing=existing)
+        assert name != "20260624143055_alice.eml"
         assert name.endswith(".eml")
 
     def test_no_existing_set(self):
-        name = make_filename("Subject", "20260624143055", "bob", existing=None)
+        name = make_filename("20260624143055", "bob", existing=None)
         assert name.endswith(".eml")
 
-    def test_illegal_chars_in_subject(self):
-        name = make_filename("Re: Project — Status <Q2>", "20260624143055", "alice")
+    def test_illegal_chars_in_sender(self):
+        name = make_filename("20260624143055", 'alice<evil>:"test"')
         for ch in r'/<>:*?"\\|':
             assert ch not in name
 
