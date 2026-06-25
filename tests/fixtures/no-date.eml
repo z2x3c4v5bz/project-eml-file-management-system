@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Email Without Date Header
+Message-ID: <nodate@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+This email has no Date header — parser must fall back to file mtime.

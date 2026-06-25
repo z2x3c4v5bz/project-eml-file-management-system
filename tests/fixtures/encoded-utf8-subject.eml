@@ -1,0 +1,9 @@
+From: =?UTF-8?b?5p2x6KW/5YWs5pu4?= <user@example.com>
+To: recipient@example.com
+Subject: =?UTF-8?b?5L2g5aW9?=
+Date: Thu, 25 Jun 2026 09:15:00 +0800
+Message-ID: <utf8test@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+UTF-8 encoded subject/sender test.

@@ -1,0 +1,9 @@
+From: "John Doe"
+To: recipient@example.com
+Subject: Display Name Only Sender
+Date: Fri, 26 Jun 2026 12:00:00 +0000
+Message-ID: <displayname@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+Sender has a display name but no email address.
