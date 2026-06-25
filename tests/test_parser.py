@@ -60,3 +60,31 @@ def test_extract_sender_local_part():
 
 def test_extract_sender_bare_string():
     assert extract_sender_name("alice") == "alice"
+
+
+def test_decode_mime_words_gb2312():
+    # "你好" in GB2312 is b'\xc4\xe3\xba\xc3'; base64 → "xOO6ww=="
+    assert decode_mime_words("=?GB2312?B?xOO6ww==?=") == "你好"
+
+
+def test_decode_mime_words_xgbk_alias():
+    # x-gbk is a non-standard alias used by some Chinese email clients;
+    # the alias mapping converts it to "gbk" before decoding.
+    assert decode_mime_words("=?x-gbk?B?xOO6ww==?=") == "你好"
+
+
+def test_decode_mime_words_unknown_charset_no_crash():
+    # An entirely unknown charset must not raise; falls back to UTF-8 replacement.
+    import base64
+    b64 = base64.b64encode(b"Hello").decode()
+    result = decode_mime_words(f"=?x-totally-unknown?B?{b64}?=")
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_decode_mime_words_mixed_cjk_ascii():
+    # Header mixing ASCII and a GB2312 encoded word stays intact.
+    header = "Meeting - =?GB2312?B?xOO6ww==?= - Done"
+    result = decode_mime_words(header)
+    assert "你好" in result
+    assert "Meeting" in result

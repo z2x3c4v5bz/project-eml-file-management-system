@@ -7,6 +7,30 @@ from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Optional
 
+# Non-standard charset aliases emitted by some East Asian email clients that
+# Python's codec system doesn't recognise under those exact names.
+_CHARSET_ALIASES: dict = {
+    # Simplified Chinese
+    "gb_2312": "gb2312",
+    "gb_2312-80": "gb2312",
+    "chinese": "gb2312",
+    "x-gb2312": "gb2312",
+    "x-gbk": "gbk",
+    "windows-936": "gbk",
+    # Japanese
+    "x-euc-jp": "euc_jp",
+    "x-euc": "euc_jp",
+    "x-sjis": "shift_jis",
+    "shift-jis": "shift_jis",
+    "windows-31j": "cp932",
+    # Korean
+    "x-euc-kr": "euc_kr",
+    "ks_c_5601-1987": "euc_kr",
+    "ks_c_5601_1987": "euc_kr",
+    # Traditional Chinese
+    "x-big5": "big5",
+}
+
 
 def decode_mime_words(header: Optional[str]) -> str:
     """RFC2047-decode an email header value to a plain Unicode string."""
@@ -16,7 +40,13 @@ def decode_mime_words(header: Optional[str]) -> str:
     chunks = []
     for raw, charset in parts:
         if isinstance(raw, bytes):
-            chunks.append(raw.decode(charset or "utf-8", errors="replace"))
+            cs = (charset or "utf-8").lower().strip()
+            cs = _CHARSET_ALIASES.get(cs, cs)
+            try:
+                chunks.append(raw.decode(cs, errors="replace"))
+            except (LookupError, TypeError):
+                # Unknown charset — fall back to UTF-8 with replacement chars.
+                chunks.append(raw.decode("utf-8", errors="replace"))
         else:
             chunks.append(raw)
     return "".join(chunks)
