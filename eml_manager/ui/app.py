@@ -1,17 +1,14 @@
 import datetime
-import json
 import logging
 import pathlib
 import queue
-import shutil
-import subprocess
-import tempfile
 import threading
 import tkinter as tk
 import zipfile
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
+from ..bundle import Bundle, MARKER_FILENAME
 from ..config import Config
 from ..database import Database
 from ..monitor import Monitor
@@ -32,8 +29,9 @@ class App(tk.Tk):
         self._config_path = config_path
 
         self._file_queue: queue.Queue = queue.Queue()
-        self._db = Database(config.db_path)
-        self._processor = Processor(config, self._db)
+        self._bundle: Optional[Bundle] = None
+        self._db: Optional[Database] = None
+        self._processor: Optional[Processor] = None
         self._monitor: Optional[Monitor] = None
         self._worker: Optional[threading.Thread] = None
         self._running = False
@@ -49,6 +47,13 @@ class App(tk.Tk):
         sh = self.winfo_screenheight()
         self.geometry(f"1100x700+{(sw - 1100) // 2}+{(sh - 700) // 2}")
 
+        self._update_controls()
+
+        if self._config.active_bundle:
+            p = pathlib.Path(self._config.active_bundle)
+            if p.exists():
+                self._mount_bundle(p)
+
     # ------------------------------------------------------------------ build
 
     def _build_ui(self):
@@ -59,6 +64,19 @@ class App(tk.Tk):
     def _build_toolbar(self):
         bar = ttk.Frame(self, relief=tk.GROOVE)
         bar.pack(fill=tk.X, padx=4, pady=4)
+
+        ttk.Button(bar, text="New Archive…", command=self._new_bundle).pack(
+            side=tk.LEFT, padx=2, pady=2
+        )
+        ttk.Button(bar, text="Open Archive…", command=self._open_bundle).pack(
+            side=tk.LEFT, padx=2, pady=2
+        )
+        self._btn_eject = ttk.Button(
+            bar, text="Eject", command=self._eject_bundle, state=tk.DISABLED
+        )
+        self._btn_eject.pack(side=tk.LEFT, padx=2, pady=2)
+
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=4)
 
         self._btn_start = ttk.Button(
             bar, text="Start Monitoring", command=self._start_monitoring
@@ -72,24 +90,24 @@ class App(tk.Tk):
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=4)
 
-        ttk.Button(bar, text="Manual Scan...", command=self._manual_scan).pack(
-            side=tk.LEFT, padx=2, pady=2
-        )
+        self._btn_scan = ttk.Button(bar, text="Manual Scan…", command=self._manual_scan)
+        self._btn_scan.pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(bar, text="Settings", command=self._open_settings).pack(
             side=tk.LEFT, padx=2, pady=2
         )
 
         ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=4)
 
-        ttk.Button(bar, text="Export Archive…", command=self._export_archive).pack(
-            side=tk.LEFT, padx=2, pady=2
+        self._btn_export = ttk.Button(
+            bar, text="Export Archive…", command=self._export_archive
         )
+        self._btn_export.pack(side=tk.LEFT, padx=2, pady=2)
         ttk.Button(bar, text="Import Archive…", command=self._import_archive).pack(
             side=tk.LEFT, padx=2, pady=2
         )
 
     def _build_main_view(self):
-        self._main = MainView(self, self._db, self._config)
+        self._main = MainView(self, self._db, self._config, self._bundle)
         self._main.pack(fill=tk.BOTH, expand=True)
         self._main.set_watch_paths(self._config.watch_paths)
 
@@ -105,9 +123,92 @@ class App(tk.Tk):
 
         logging.getLogger().addHandler(_WidgetLogHandler(self._log_text))
 
+    # ------------------------------------------------------------------ bundle mount / eject
+
+    def _new_bundle(self):
+        parent = filedialog.askdirectory(title="Select folder to create the archive in")
+        if not parent:
+            return
+        name = simpledialog.askstring("New Archive", "Name for the new archive:", parent=self)
+        if not name:
+            return
+        dest = pathlib.Path(parent) / name
+        if dest.exists() and any(dest.iterdir()):
+            if not messagebox.askyesno(
+                "New Archive",
+                f"Folder already exists:\n{dest}\n\nUse it as an archive anyway?",
+                icon="warning",
+            ):
+                return
+        try:
+            Bundle.create(dest)
+        except Exception as exc:
+            messagebox.showerror("New Archive", f"Could not create archive:\n{exc}")
+            return
+        self._mount_bundle(dest)
+
+    def _open_bundle(self):
+        path = filedialog.askdirectory(title="Open Archive Folder")
+        if not path:
+            return
+        self._mount_bundle(pathlib.Path(path))
+
+    def _mount_bundle(self, path: pathlib.Path):
+        bundle = Bundle(path)
+        if not bundle.is_valid():
+            messagebox.showerror(
+                "Open Archive",
+                f"Not a valid archive:\n{path}\n\nMissing {MARKER_FILENAME} marker.",
+            )
+            return
+        if self._running:
+            self._stop_monitoring()
+        self._bundle = bundle
+        self._db = Database(bundle.db_path, str(bundle.emails_root))
+        self._processor = Processor(self._config, self._db, bundle)
+        self.title(f"EML File Manager — {bundle.name}")
+        self._main.set_bundle(bundle, self._db)
+        self._main.refresh()
+        self._config.active_bundle = str(path)
+        recent = [str(path)] + [r for r in self._config.recent_archives if r != str(path)]
+        self._config.recent_archives = recent[:10]
+        self._config.save(self._config_path)
+        self._update_controls()
+
+    def _eject_bundle(self):
+        if self._running:
+            self._stop_monitoring()
+        if self._worker and self._worker.is_alive():
+            self._worker.join(timeout=2.0)
+        if self._db and hasattr(self._db._local, "conn"):
+            self._db._local.conn.close()
+        self._bundle = None
+        self._db = None
+        self._processor = None
+        self.title("EML File Manager")
+        self._config.active_bundle = ""
+        self._config.save(self._config_path)
+        self._main.set_bundle(None, None)
+        self._update_controls()
+
+    def _update_controls(self):
+        has_bundle = bool(self._bundle)
+        state = tk.NORMAL if has_bundle else tk.DISABLED
+        self._btn_eject.config(state=state)
+        self._btn_export.config(state=state)
+        self._btn_scan.config(state=state)
+        if not has_bundle:
+            self._btn_start.config(state=tk.DISABLED)
+            self._btn_stop.config(state=tk.DISABLED)
+        elif not self._running:
+            self._btn_start.config(state=tk.NORMAL)
+            self._btn_stop.config(state=tk.DISABLED)
+
     # ------------------------------------------------------------------ monitoring
 
     def _start_monitoring(self):
+        if not self._bundle:
+            return
         if not self._config.watch_paths:
             messagebox.showwarning(
                 "No Watch Paths",
@@ -131,11 +232,13 @@ class App(tk.Tk):
         self._running = False
         if self._monitor:
             self._monitor.stop()
-        self._btn_start.config(state=tk.NORMAL)
+        self._btn_start.config(state=tk.NORMAL if self._bundle else tk.DISABLED)
         self._btn_stop.config(state=tk.DISABLED)
         self._set_status("Idle")
 
     def _manual_scan(self):
+        if not self._bundle:
+            return
         path = filedialog.askdirectory(title="Select Directory to Scan")
         if not path:
             return
@@ -156,51 +259,35 @@ class App(tk.Tk):
         if dlg.result:
             self._config = dlg.result
             self._config.save(self._config_path)
-            self._processor.config = self._config
+            if self._processor:
+                self._processor.config = self._config
             self._main.set_watch_paths(self._config.watch_paths)
 
     # ------------------------------------------------------------------ archive export / import
 
     def _export_archive(self):
-        archive_root = pathlib.Path(self._config.archive_root)
-        if not archive_root.exists():
-            messagebox.showerror(
-                "Export Archive",
-                f"Archive root does not exist:\n{archive_root}\n\n"
-                "Configure a valid Archive Root in Settings first.",
-            )
+        if not self._bundle:
+            messagebox.showwarning("Export Archive", "No archive is mounted.")
             return
-
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = filedialog.asksaveasfilename(
             defaultextension=".zip",
             filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
-            initialfile=f"eml_backup_{ts}.zip",
+            initialfile=f"{self._bundle.name}_{ts}.zip",
             title="Export Archive",
         )
         if not out_path:
             return
-
         try:
             self.config(cursor="watch")
             self.update()
-            manifest = {
-                "version": 1,
-                "archive_root": str(archive_root),
-                "exported_at": datetime.datetime.utcnow().isoformat(),
-            }
             file_count = 0
             with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-                zf.write(self._db._path, "database.db")
-                for src in archive_root.rglob("*"):
+                for src in self._bundle.path.rglob("*"):
                     if src.is_file():
-                        zf.write(src, f"files/{src.relative_to(archive_root)}")
+                        zf.write(src, src.relative_to(self._bundle.path))
                         file_count += 1
-            messagebox.showinfo(
-                "Export Archive",
-                f"Exported {file_count} file(s) to:\n{out_path}",
-            )
+            messagebox.showinfo("Export Archive", f"Exported {file_count} file(s) to:\n{out_path}")
         except Exception as exc:
             messagebox.showerror("Export Archive", f"Export failed:\n{exc}")
         finally:
@@ -213,107 +300,45 @@ class App(tk.Tk):
         )
         if not in_path:
             return
-
-        # Validate before asking the user to confirm
         try:
             with zipfile.ZipFile(in_path, "r") as zf:
-                names = zf.namelist()
-                if "manifest.json" not in names:
-                    messagebox.showerror("Import Archive", "Invalid archive: missing manifest.json")
-                    return
-                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
-                if manifest.get("version") != 1:
+                if MARKER_FILENAME not in zf.namelist():
                     messagebox.showerror(
                         "Import Archive",
-                        f"Unsupported archive version: {manifest.get('version')}",
+                        f"Not a valid archive bundle — missing {MARKER_FILENAME}.",
                     )
                     return
-                if "database.db" not in names:
-                    messagebox.showerror("Import Archive", "Invalid archive: missing database.db")
-                    return
         except zipfile.BadZipFile:
-            messagebox.showerror("Import Archive", "The selected file is not a valid ZIP archive.")
+            messagebox.showerror("Import Archive", "Not a valid ZIP file.")
             return
         except Exception as exc:
             messagebox.showerror("Import Archive", f"Failed to read archive:\n{exc}")
             return
 
-        old_root = manifest.get("archive_root", "")
-        exported_at = manifest.get("exported_at", "unknown")
-
-        if not messagebox.askyesno(
-            "Import Archive — Replace All Data",
-            f"This will REPLACE your current database and archived emails.\n\n"
-            f"Backup archive root: {old_root}\n"
-            f"Exported at:         {exported_at}\n\n"
-            f"Emails currently in the app but not in this backup will no longer appear "
-            f"(files on disk are not deleted).\n\n"
-            f"This cannot be undone. Continue?",
-            icon="warning",
-        ):
+        parent_dir = filedialog.askdirectory(title="Select folder to extract archive into")
+        if not parent_dir:
             return
-
-        new_root = filedialog.askdirectory(
-            title="Select destination folder for archived emails",
-            initialdir=self._config.archive_root,
+        default_name = pathlib.Path(in_path).stem
+        bundle_name = simpledialog.askstring(
+            "Import Archive", "Name for the imported archive:", initialvalue=default_name, parent=self
         )
-        if not new_root:
+        if not bundle_name:
             return
-        new_root_path = pathlib.Path(new_root)
-
-        was_running = self._running
-        if was_running:
-            self._stop_monitoring()
-
+        dest = pathlib.Path(parent_dir) / bundle_name
+        if dest.exists() and any(dest.iterdir()):
+            if not messagebox.askyesno(
+                "Import Archive",
+                f"Folder already exists:\n{dest}\n\nExtract into it anyway?",
+                icon="warning",
+            ):
+                return
         try:
             self.config(cursor="watch")
             self.update()
-
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp_path = pathlib.Path(tmp)
-
-                with zipfile.ZipFile(in_path, "r") as zf:
-                    zf.extract("database.db", tmp_path)
-                    file_count = 0
-                    prefix = "files/"
-                    for entry in zf.infolist():
-                        name = entry.filename
-                        if name.startswith(prefix) and not entry.is_dir():
-                            dest = new_root_path / name[len(prefix):]
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                            dest.write_bytes(zf.read(name))
-                            file_count += 1
-
-                # Rewrite stored_path values in the extracted DB, then swap it in
-                tmp_db_path = str(tmp_path / "database.db")
-                tmp_db = Database(tmp_db_path)
-                updated = tmp_db.rewrite_paths(old_root, str(new_root_path))
-                if hasattr(tmp_db._local, "conn"):
-                    tmp_db._local.conn.close()
-
-                self._db.replace_file_and_reinit(tmp_db_path)
-
-            # Update config archive_root if the destination differs
-            if new_root_path.resolve() != pathlib.Path(self._config.archive_root).resolve():
-                self._config.archive_root = str(new_root_path)
-                self._config.save(self._config_path)
-                self._processor.config = self._config
-
-            self._main.set_watch_paths(self._config.watch_paths)
-            self._main.refresh()
-
-            all_rows = self._db.search(limit=100_000)
-            orphans = sum(
-                1 for r in all_rows if not pathlib.Path(r["stored_path"]).exists()
-            )
-            msg = (
-                f"Import complete.\n"
-                f"{file_count} file(s) extracted, {updated} record(s) updated."
-            )
-            if orphans:
-                msg += f"\n\nWarning: {orphans} record(s) point to missing files."
-            messagebox.showinfo("Import Archive", msg)
-
+            dest.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(in_path, "r") as zf:
+                zf.extractall(dest)
+            self._mount_bundle(dest)
         except Exception as exc:
             messagebox.showerror("Import Archive", f"Import failed:\n{exc}")
         finally:
@@ -325,7 +350,8 @@ class App(tk.Tk):
         while self._running or not self._file_queue.empty():
             try:
                 file_path = self._file_queue.get(timeout=1.0)
-                self._processor.process(file_path)
+                if self._processor:
+                    self._processor.process(file_path)
                 self._file_queue.task_done()
             except queue.Empty:
                 pass

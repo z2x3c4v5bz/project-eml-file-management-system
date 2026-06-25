@@ -49,34 +49,42 @@ The GUI window opens. On first run, no watch paths are configured — follow the
 
 ## Quick Start
 
-### 1. Open Settings
+### 1. Create an Archive
+
+Click **New Archive…** in the toolbar. Choose a parent folder and give the archive a name. The app creates a self-contained archive *bundle* (a folder holding the database and an `emails/` sub-folder) and mounts it. See [Archive Bundles](#archive-bundles) for details.
+
+To re-open an existing archive later, use **Open Archive…**. The most recently mounted archive is re-mounted automatically on startup.
+
+### 2. Open Settings
 
 Click **Settings** in the toolbar.
 
-### 2. Configure Paths (Paths tab)
+### 3. Configure Paths (Paths tab)
 
 | Field | What it means |
 |---|---|
 | **Watch Paths** | Folder(s) the app monitors for new `.eml` files. Click **Add…** to pick a folder. |
-| **Archive Root** | Where organised files are stored. The app creates sub-folders here automatically. |
-| **Duplicates Folder Name** | Sub-folder inside Archive Root where duplicate emails are moved (default: `duplicates`). |
+| **Duplicates Folder Name** | Sub-folder inside the archive's `emails/` folder where duplicate emails are moved (default: `duplicates`). |
 
 Click **Save**.
 
-### 3. Start Monitoring
+### 4. Start Monitoring
 
-Click **Start Monitoring**. The status indicator turns green.
+With an archive mounted, click **Start Monitoring**. The status indicator turns green.
 
-### 4. Add an Email
+### 5. Add an Email
 
 Copy or move any `.eml` file into your watch folder. Within a few seconds it will appear in the table with status `processed`.
 
-The file is renamed and moved automatically:
+The file is renamed and moved automatically into the mounted archive:
 
 ```
-Archive Root\
-└── Hello_World\                              ← normalised subject name (reply/forward prefixes stripped)
-    └── Hello_World_20260624143055_Alice_Smith.eml
+MyArchive\                                    ← the archive bundle folder
+├── .emlarchive                               ← marker identifying this folder as an archive
+├── archive.db                                ← the metadata database
+└── emails\
+    └── Hello_World\                          ← normalised subject name (reply/forward prefixes stripped)
+        └── Hello_World_20260624143055_Alice_Smith.eml
 ```
 
 Reply and forward prefixes (`Re:`, `FW:`, `Fwd:`, `答复:`, `转发:`, etc.) are stripped before the folder and filename are generated, so threaded conversations are grouped together regardless of how many times they were replied to or forwarded. The original subject is preserved as-is in the database and displayed in the table.
@@ -120,33 +128,6 @@ All active filters combine with AND logic. The Tags dropdown is populated from e
 
 ---
 
-## Backup and Restore
-
-### Export Archive
-
-Click **Export Archive…** in the toolbar to create a single `.zip` file containing:
-- The database (`database.db`)
-- All `.eml` files under the Archive Root, preserving the folder structure
-- A `manifest.json` recording the original archive root path and export timestamp
-
-Use this to back up all data or migrate to a new machine.
-
-### Import Archive
-
-Click **Import Archive…** to restore from a previously exported `.zip`:
-
-1. Select the `.zip` file created by Export Archive.
-2. Confirm the replacement — this will overwrite the current database and extract emails to the chosen destination. Emails currently in the app but absent from the backup will no longer appear (files on disk are not deleted).
-3. Choose a destination folder for the extracted emails (defaults to the current Archive Root).
-
-All database path references are automatically rewritten to point to the new location. A warning is shown if any records still point to missing files after import.
-
-### Export / Import Settings
-
-In the **Settings** dialog, use the **Export Settings…** and **Import Settings…** buttons (bottom-left) to save or load a portable `.yml` file. Machine-specific paths (`db_path`, `log_path`) are excluded from the export and kept from the current machine on import. After importing, review the paths and click **Save** to apply.
-
----
-
 ## Manual Scan
 
 If you have a folder of existing `.eml` files you want to import all at once:
@@ -154,6 +135,51 @@ If you have a folder of existing `.eml` files you want to import all at once:
 1. Click **Manual Scan…** in the toolbar.
 2. Select the folder.
 3. The app queues and processes every `.eml` found (recursively).
+
+(Manual Scan is only available while an archive is mounted.)
+
+---
+
+## Archive Bundles
+
+An **archive** is a self-contained folder — a *bundle* — that holds everything for one collection of emails:
+
+```
+MyArchive\
+├── .emlarchive      ← marker file that identifies the folder as an archive bundle
+├── archive.db       ← the metadata database
+└── emails\          ← organised .eml files, in subject-named sub-folders
+```
+
+Because the database stores each email's location **relative to `emails/`**, a bundle is fully portable: you can copy, move, or rename the whole folder, put it on a USB drive or network share, and it still works — no paths need rewriting.
+
+The app mounts **zero or one** bundle at a time, like a removable volume:
+
+| Toolbar button | What it does |
+|---|---|
+| **New Archive…** | Create a new, empty bundle and mount it |
+| **Open Archive…** | Mount an existing bundle folder |
+| **Eject** | Unmount the current bundle (stops monitoring and closes the database) |
+
+The path of the mounted bundle is remembered in the config, and the app re-mounts it automatically on the next launch (if the folder still exists). Most actions — Start Monitoring, Manual Scan, Export Archive — are only available while a bundle is mounted.
+
+---
+
+## Backup and Restore
+
+### Export Archive
+
+With an archive mounted, click **Export Archive…** in the toolbar. The app zips the **entire bundle folder** — `.emlarchive`, `archive.db`, and the whole `emails/` tree — into a single `.zip` file. No path rewriting is needed because all stored paths are already relative.
+
+### Import Archive
+
+Click **Import Archive…** to restore from a previously exported `.zip`:
+
+1. Select the `.zip` file. The app verifies it is a valid bundle (it must contain the `.emlarchive` marker).
+2. Choose a parent folder and a name for the restored archive.
+3. The app extracts the zip into that folder and mounts the resulting bundle.
+
+Importing never overwrites the currently mounted archive — it creates a separate bundle and switches to it.
 
 ---
 
@@ -164,7 +190,6 @@ If you have a folder of existing `.eml` files you want to import all at once:
 | Setting | Default | Description |
 |---|---|---|
 | Watch Paths | *(none)* | One or more directories to monitor |
-| Archive Root | `%USERPROFILE%\EmailArchive` | Root of the organised folder tree |
 | Duplicates Folder Name | `duplicates` | Sub-folder for detected duplicate emails |
 
 ### Processing tab
@@ -187,29 +212,29 @@ If you have a folder of existing `.eml` files you want to import all at once:
 
 ## Command-Line Interface
 
-All features are also available without the GUI.
+All features are also available without the GUI. Commands that read or write the archive (`scan`, `import`, `export`, `db-check`) operate on a bundle. Pass `--bundle PATH` to choose one, or omit it to use the archive last mounted in the GUI.
 
 ```bat
 rem Scan a directory and process all .eml files found
-eml-manager scan --path C:\Users\you\Downloads\Emails --recursive
+eml-manager --bundle C:\path\to\MyArchive scan --path C:\Users\you\Downloads\Emails --recursive
 
 rem Import a single file immediately
-eml-manager import C:\Users\you\Downloads\invoice.eml
+eml-manager --bundle C:\path\to\MyArchive import C:\Users\you\Downloads\invoice.eml
 
 rem Export the full database to CSV
-eml-manager export --out archive.csv
+eml-manager --bundle C:\path\to\MyArchive export --out archive.csv
 
 rem Filter the export by keyword
-eml-manager export --keyword "invoice" --out invoices.csv
+eml-manager --bundle C:\path\to\MyArchive export --keyword "invoice" --out invoices.csv
 
 rem Verify database integrity
-eml-manager db-check
+eml-manager --bundle C:\path\to\MyArchive db-check
 
 rem Use a custom config file
-eml-manager --config C:\path\to\config.yml
+eml-manager --config C:\path\to\config.yml --bundle C:\path\to\MyArchive db-check
 
 rem Verbose / debug logging
-eml-manager --verbose scan --path C:\Users\you\Downloads
+eml-manager --verbose --bundle C:\path\to\MyArchive scan --path C:\Users\you\Downloads
 ```
 
 Exit codes: `0` = success, non-zero = error.
@@ -251,7 +276,7 @@ When a file is processed, the app checks whether an email with the same **Messag
 | File | Path |
 |---|---|
 | Config | `%APPDATA%\eml_manager\config.yml` |
-| Database | `%APPDATA%\eml_manager\eml_manager.db` |
+| Database | inside the archive bundle (`<bundle>\archive.db`) |
 | Log | `%APPDATA%\eml_manager\logs\eml-manager.log` |
 
 You can edit `config.yml` by hand if needed.

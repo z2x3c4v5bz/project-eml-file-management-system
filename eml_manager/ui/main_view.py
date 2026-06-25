@@ -115,10 +115,11 @@ class _TagEditDialog(tk.Toplevel):
 
 
 class MainView(ttk.Frame):
-    def __init__(self, parent, db: Database, config: Config):
+    def __init__(self, parent, db, config: Config, bundle=None):
         super().__init__(parent)
         self._db = db
         self._config = config
+        self._bundle = bundle
         self._results: List[dict] = []
         self._searching = False
         self._build()
@@ -261,8 +262,18 @@ class MainView(ttk.Frame):
 
     # ------------------------------------------------------------------ data
 
+    def set_bundle(self, bundle, db):
+        self._bundle = bundle
+        self._db = db
+        self.refresh()
+
     def refresh(self):
         """Reload the view: re-runs the active search if one is set, else shows last 100."""
+        if self._db is None:
+            self._tree.delete(*self._tree.get_children())
+            self._results = []
+            self._count_var.set("No archive mounted.")
+            return
         if self._searching:
             self._search()
             return
@@ -365,7 +376,9 @@ class MainView(ttk.Frame):
             self._edit_tags(row)
 
     def _open_file(self, row: dict):
-        p = pathlib.Path(row["stored_path"])
+        if not self._bundle:
+            return
+        p = self._bundle.resolve(row["stored_path"])
         if p.exists():
             os.startfile(p)
         else:
@@ -435,7 +448,7 @@ class MainView(ttk.Frame):
         errors: list[str] = []
         deleted_ids: list[int] = []
         for row in rows:
-            p = pathlib.Path(row["stored_path"])
+            p = self._bundle.resolve(row["stored_path"]) if self._bundle else pathlib.Path(row["stored_path"])
             try:
                 if p.exists():
                     p.unlink()
@@ -472,7 +485,9 @@ class MainView(ttk.Frame):
         row = next((r for r in self._results if r["id"] == row_id), None)
         if not row:
             return
-        p = pathlib.Path(row["stored_path"]).resolve()
+        if not self._bundle:
+            return
+        p = self._bundle.resolve(row["stored_path"]).resolve()
         if p.exists():
             # shell=True + quoted path is required for paths containing spaces
             subprocess.run(f'explorer /select,"{p}"', shell=True, check=False)

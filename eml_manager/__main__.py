@@ -7,6 +7,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 
 from . import __version__
+from .bundle import Bundle
 from .config import Config, default_config_path
 from .database import Database
 from .monitor import Monitor
@@ -33,9 +34,9 @@ def setup_logging(config: Config):
 
 # --- sub-commands ---
 
-def cmd_scan(args, config: Config, db: Database):
+def cmd_scan(args, config: Config, db: Database, bundle: Bundle):
     q: queue.Queue = queue.Queue()
-    processor = Processor(config, db)
+    processor = Processor(config, db, bundle)
     monitor = Monitor([], q)
     count = monitor.scan_directory(pathlib.Path(args.path), recursive=args.recursive)
     if args.dry_run:
@@ -58,8 +59,8 @@ def cmd_scan(args, config: Config, db: Database):
     print(f"\nDone — processed={processed}, duplicates={dupes}, errors={errors}")
 
 
-def cmd_import(args, config: Config, db: Database):
-    processor = Processor(config, db)
+def cmd_import(args, config: Config, db: Database, bundle: Bundle):
+    processor = Processor(config, db, bundle)
     target = pathlib.Path(args.target)
     if target.is_file():
         files = [target]
@@ -101,6 +102,7 @@ def cmd_export(args, config: Config, db: Database):
 def main():
     parser = argparse.ArgumentParser(prog="eml-manager", description="EML File Management System")
     parser.add_argument("--config", default=str(default_config_path()), help="Config file path")
+    parser.add_argument("--bundle", default="", help="Path to the archive bundle to use")
     parser.add_argument("--verbose", "-v", action="store_true", help="Set log level to DEBUG")
     sub = parser.add_subparsers(dest="command")
 
@@ -133,16 +135,29 @@ def main():
         config.log_level = "DEBUG"
     setup_logging(config)
 
-    db = Database(config.db_path)
+    if args.command in ("scan", "import", "db-check", "export"):
+        bundle_path = args.bundle or config.active_bundle
+        if not bundle_path:
+            print(
+                "Error: no archive bundle specified. Use --bundle PATH "
+                "or set an active bundle via the GUI.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        bundle = Bundle(pathlib.Path(bundle_path))
+        if not bundle.is_valid():
+            print(f"Error: not a valid archive bundle: {bundle_path}", file=sys.stderr)
+            sys.exit(1)
+        db = Database(bundle.db_path, str(bundle.emails_root))
 
-    if args.command == "scan":
-        cmd_scan(args, config, db)
-    elif args.command == "import":
-        cmd_import(args, config, db)
-    elif args.command == "db-check":
-        cmd_db_check(args, config, db)
-    elif args.command == "export":
-        cmd_export(args, config, db)
+        if args.command == "scan":
+            cmd_scan(args, config, db, bundle)
+        elif args.command == "import":
+            cmd_import(args, config, db, bundle)
+        elif args.command == "db-check":
+            cmd_db_check(args, config, db)
+        elif args.command == "export":
+            cmd_export(args, config, db)
     else:
         # gui (default)
         from .ui.app import App

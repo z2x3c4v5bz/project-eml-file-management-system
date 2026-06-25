@@ -29,8 +29,9 @@ CREATE        INDEX IF NOT EXISTS idx_msg_ts      ON messages(sent_timestamp);
 
 
 class Database:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, emails_root: Optional[str] = None):
         self._path = db_path
+        self._emails_root = emails_root
         self._local = threading.local()
         pathlib.Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init()
@@ -74,6 +75,33 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_msg_pure_subject ON messages(pure_subject)"
         )
         conn.commit()
+        # Convert absolute stored_path values (from pre-refactor databases) to paths
+        # relative to the bundle's emails/ root. Only runs when an emails_root is set
+        # and at least one stored_path is still absolute.
+        if self._emails_root:
+            emails_root = pathlib.PurePath(self._emails_root)
+            rows = conn.execute(
+                "SELECT id, stored_path FROM messages WHERE stored_path IS NOT NULL"
+            ).fetchall()
+            needs_migration = any(
+                pathlib.PurePath(r[1]).is_absolute() for r in rows if r[1]
+            )
+            if needs_migration:
+                for row_id, path in rows:
+                    if not path:
+                        continue
+                    p = pathlib.PurePath(path)
+                    if not p.is_absolute():
+                        continue
+                    try:
+                        rel = p.relative_to(emails_root)
+                    except ValueError:
+                        continue
+                    conn.execute(
+                        "UPDATE messages SET stored_path = ? WHERE id = ?",
+                        (str(rel), row_id),
+                    )
+                conn.commit()
 
     # --- duplicate detection ---
 
@@ -195,37 +223,6 @@ class Database:
         params += [limit, offset]
         conn = self._conn()
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-    def rewrite_paths(self, old_root: str, new_root: str) -> int:
-        """Replace old_root prefix with new_root in all stored_path values. Returns count updated."""
-        old = pathlib.PurePath(old_root)
-        new = pathlib.PurePath(new_root)
-        conn = self._conn()
-        rows = conn.execute("SELECT id, stored_path FROM messages").fetchall()
-        updated = 0
-        for row_id, path in rows:
-            if not path:
-                continue
-            try:
-                rel = pathlib.PurePath(path).relative_to(old)
-                conn.execute(
-                    "UPDATE messages SET stored_path = ? WHERE id = ?",
-                    (str(new / rel), row_id),
-                )
-                updated += 1
-            except ValueError:
-                pass
-        conn.commit()
-        return updated
-
-    def replace_file_and_reinit(self, source_path: str) -> None:
-        """Replace the database file with source_path and reinitialise the connection."""
-        import shutil
-        if hasattr(self._local, "conn"):
-            self._local.conn.close()
-            del self._local.conn
-        shutil.copy2(source_path, self._path)
-        self._init()
 
     def check_integrity(self) -> bool:
         result = self._conn().execute("PRAGMA integrity_check").fetchone()

@@ -32,9 +32,7 @@ def default_config_path() -> pathlib.Path:
 @dataclass
 class Config:
     watch_paths: List[str] = field(default_factory=list)
-    archive_root: str = str(pathlib.Path.home() / "EmailArchive")
     duplicates_folder: str = "duplicates"
-    db_path: str = str(_data_dir() / "eml_manager.db")
     dedupe_policy: str = "message_id,sha256"
     timezone: str = "UTC"
     filename_limit: int = 200
@@ -42,6 +40,8 @@ class Config:
     retry_count: int = 3
     log_path: str = str(_log_dir() / "eml-manager.log")
     log_level: str = "INFO"
+    recent_archives: List[str] = field(default_factory=list)
+    active_bundle: str = ""
 
     def save(self, path: pathlib.Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

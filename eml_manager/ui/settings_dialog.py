@@ -108,23 +108,12 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_col, text="Add...", command=self._add_watch).pack(fill=tk.X)
         ttk.Button(btn_col, text="Remove", command=self._remove_watch).pack(fill=tk.X, pady=2)
 
-        ttk.Label(tab, text="Archive Root:").grid(
-            row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0)
-        )
-        self._archive_var = tk.StringVar(value=self._cfg.archive_root)
-        row_frame = ttk.Frame(tab)
-        row_frame.grid(row=3, column=0, columnspan=2, sticky=tk.W)
-        ttk.Entry(row_frame, textvariable=self._archive_var, width=44).pack(side=tk.LEFT)
-        ttk.Button(row_frame, text="...", width=3, command=self._browse_archive).pack(
-            side=tk.LEFT, padx=2
-        )
-
         ttk.Label(tab, text="Duplicates Folder Name:").grid(
-            row=4, column=0, columnspan=2, sticky=tk.W, pady=(8, 0)
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0)
         )
         self._dup_var = tk.StringVar(value=self._cfg.duplicates_folder)
         ttk.Entry(tab, textvariable=self._dup_var, width=24).grid(
-            row=5, column=0, sticky=tk.W
+            row=3, column=0, sticky=tk.W
         )
 
     def _build_processing_tab(self, tab):
@@ -184,12 +173,12 @@ class SettingsDialog(tk.Toplevel):
         if not out_path:
             return
         try:
-            # Strip machine-specific paths so the file is portable
-            from ..config import Config
+            # Strip machine-specific and session-specific fields so the file is portable
             export_cfg = copy.deepcopy(self._cfg)
             defaults = Config()
-            export_cfg.db_path = defaults.db_path
             export_cfg.log_path = defaults.log_path
+            export_cfg.active_bundle = ""
+            export_cfg.recent_archives = []
             export_cfg.save(pathlib.Path(out_path))
             messagebox.showinfo("Export Settings", f"Settings exported to:\n{out_path}")
         except Exception as exc:
@@ -203,11 +192,11 @@ class SettingsDialog(tk.Toplevel):
         if not in_path:
             return
         try:
-            from ..config import Config
             loaded = Config.load(pathlib.Path(in_path))
-            # Preserve machine-specific paths from the current running config
-            loaded.db_path = self._cfg.db_path
+            # Preserve machine-specific and session-specific fields
             loaded.log_path = self._cfg.log_path
+            loaded.active_bundle = self._cfg.active_bundle
+            loaded.recent_archives = self._cfg.recent_archives
             self._cfg = loaded
             self._apply_cfg_to_fields()
             messagebox.showinfo(
@@ -221,7 +210,6 @@ class SettingsDialog(tk.Toplevel):
         self._watch_lb.delete(0, tk.END)
         for p in self._cfg.watch_paths:
             self._watch_lb.insert(tk.END, p)
-        self._archive_var.set(self._cfg.archive_root)
         self._dup_var.set(self._cfg.duplicates_folder)
         self._dedupe_var.set(self._cfg.dedupe_policy)
         self._limit_var.set(self._cfg.filename_limit)
@@ -242,14 +230,8 @@ class SettingsDialog(tk.Toplevel):
         if sel:
             self._watch_lb.delete(sel[0])
 
-    def _browse_archive(self):
-        path = filedialog.askdirectory(title="Select Archive Root")
-        if path:
-            self._archive_var.set(path)
-
     def _save(self):
         self._cfg.watch_paths = list(self._watch_lb.get(0, tk.END))
-        self._cfg.archive_root = self._archive_var.get()
         self._cfg.duplicates_folder = self._dup_var.get()
         self._cfg.dedupe_policy = self._dedupe_var.get()
         self._cfg.filename_limit = int(self._limit_var.get())

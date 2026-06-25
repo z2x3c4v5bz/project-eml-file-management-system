@@ -3,6 +3,7 @@ import logging
 import pathlib
 import time
 
+from .bundle import Bundle
 from .config import Config
 from .database import Database
 from .normalizer import make_filename, make_folder_name, normalize_timestamp, strip_subject_prefixes
@@ -16,9 +17,10 @@ class ProcessingError(Exception):
 
 
 class Processor:
-    def __init__(self, config: Config, db: Database):
+    def __init__(self, config: Config, db: Database, bundle: Bundle):
         self.config = config
         self.db = db
+        self.bundle = bundle
 
     def process(self, file_path: pathlib.Path) -> dict:
         """Full pipeline: parse → dedupe → move → persist. Returns a result dict."""
@@ -45,7 +47,7 @@ class Processor:
 
         timestamp = normalize_timestamp(meta["sent_dt"], self.config.timezone)
         pure_subject = strip_subject_prefixes(meta["subject"])
-        dest_folder = pathlib.Path(self.config.archive_root) / make_folder_name(pure_subject)
+        dest_folder = self.bundle.emails_root / make_folder_name(pure_subject)
         dest_folder.mkdir(parents=True, exist_ok=True)
 
         existing_names = {p.name for p in dest_folder.glob("*.eml")}
@@ -65,7 +67,7 @@ class Processor:
                 "message_id": meta["message_id"],
                 "sha256": meta["sha256"],
                 "original_path": str(file_path),
-                "stored_path": str(dest_path),
+                "stored_path": str(dest_path.relative_to(self.bundle.emails_root)),
                 "filename": filename,
                 "subject": meta["subject"],
                 "pure_subject": pure_subject,
@@ -107,7 +109,7 @@ class Processor:
         logger.warning("Stability timeout for %s — processing anyway", path.name)
 
     def _move_to_duplicates(self, path: pathlib.Path):
-        dup_dir = pathlib.Path(self.config.archive_root) / self.config.duplicates_folder
+        dup_dir = self.bundle.emails_root / self.config.duplicates_folder
         dup_dir.mkdir(parents=True, exist_ok=True)
         dest = dup_dir / path.name
         if dest.exists():
