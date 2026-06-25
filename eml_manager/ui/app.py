@@ -8,6 +8,8 @@ import zipfile
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
+from tkinterdnd2 import DND_FILES, TkinterDnD
+
 from ..bundle import Bundle, MARKER_FILENAME
 from ..config import Config
 from ..database import Database
@@ -21,7 +23,7 @@ logger = logging.getLogger(__name__)
 _STATUS_COLORS = {"Running": "green", "Idle": "orange", "Stopped": "red"}
 
 
-class App(tk.Tk):
+class App(TkinterDnD.Tk):
     def __init__(self, config: Config, config_path: pathlib.Path):
         super().__init__()
 
@@ -41,6 +43,8 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._build_ui()
+        self.drop_target_register(DND_FILES)
+        self.dnd_bind("<<Drop>>", self._on_drop)
         self._tick()
         self.update_idletasks()
         sw = self.winfo_screenwidth()
@@ -110,6 +114,7 @@ class App(tk.Tk):
         self._main = MainView(self, self._db, self._config, self._bundle)
         self._main.pack(fill=tk.BOTH, expand=True)
         self._main.set_watch_paths(self._config.watch_paths)
+        self._main.enable_drop(self._on_drop)
 
     def _build_log_panel(self):
         frame = ttk.LabelFrame(self, text="Log", padding=2)
@@ -343,6 +348,31 @@ class App(tk.Tk):
             messagebox.showerror("Import Archive", f"Import failed:\n{exc}")
         finally:
             self.config(cursor="")
+
+    # ------------------------------------------------------------------ drag-and-drop
+
+    def _on_drop(self, event):
+        if not self._bundle:
+            logger.warning("Drop ignored — no archive is mounted.")
+            return
+        paths = self.tk.splitlist(event.data)
+        eml_files = [
+            pathlib.Path(p)
+            for p in paths
+            if p.lower().endswith(".eml") and pathlib.Path(p).is_file()
+        ]
+        if not eml_files:
+            return
+        for path in eml_files:
+            self._file_queue.put(path)
+        # Start a one-shot worker if none is alive; a running monitoring worker
+        # will pick up the queued files automatically.
+        if self._worker is None or not self._worker.is_alive():
+            self._worker = threading.Thread(
+                target=self._worker_loop, daemon=True, name="eml-worker"
+            )
+            self._worker.start()
+        logger.info("Queued %d dropped .eml file(s) for processing.", len(eml_files))
 
     # ------------------------------------------------------------------ worker
 
