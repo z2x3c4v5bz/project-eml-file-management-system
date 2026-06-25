@@ -120,6 +120,33 @@ All active filters combine with AND logic. The Tags dropdown is populated from e
 
 ---
 
+## Backup and Restore
+
+### Export Archive
+
+Click **Export Archive…** in the toolbar to create a single `.zip` file containing:
+- The database (`database.db`)
+- All `.eml` files under the Archive Root, preserving the folder structure
+- A `manifest.json` recording the original archive root path and export timestamp
+
+Use this to back up all data or migrate to a new machine.
+
+### Import Archive
+
+Click **Import Archive…** to restore from a previously exported `.zip`:
+
+1. Select the `.zip` file created by Export Archive.
+2. Confirm the replacement — this will overwrite the current database and extract emails to the chosen destination. Emails currently in the app but absent from the backup will no longer appear (files on disk are not deleted).
+3. Choose a destination folder for the extracted emails (defaults to the current Archive Root).
+
+All database path references are automatically rewritten to point to the new location. A warning is shown if any records still point to missing files after import.
+
+### Export / Import Settings
+
+In the **Settings** dialog, use the **Export Settings…** and **Import Settings…** buttons (bottom-left) to save or load a portable `.yml` file. Machine-specific paths (`db_path`, `log_path`) are excluded from the export and kept from the current machine on import. After importing, review the paths and click **Save** to apply.
+
+---
+
 ## Manual Scan
 
 If you have a folder of existing `.eml` files you want to import all at once:

@@ -136,6 +136,32 @@ class TestSearch:
         assert rows[2]["pure_subject"] == "Zebra"
 
 
+class TestRewritePaths:
+    def test_rewrite_updates_matching_rows(self, db):
+        db.insert(_record(stored_path="/old/root/Hello/file.eml"))
+        db.insert(_record(message_id="<b@x>", sha256="b" * 64, stored_path="/old/root/World/file.eml"))
+        updated = db.rewrite_paths("/old/root", "/new/root")
+        assert updated == 2
+        rows = db.recent(10)
+        assert all(r["stored_path"].startswith("/new/root") for r in rows)
+
+    def test_rewrite_skips_non_matching_rows(self, db):
+        db.insert(_record(stored_path="/unrelated/file.eml"))
+        updated = db.rewrite_paths("/old/root", "/new/root")
+        assert updated == 0
+        rows = db.recent(10)
+        assert rows[0]["stored_path"] == "/unrelated/file.eml"
+
+    def test_rewrite_partial_match(self, db):
+        db.insert(_record(message_id="<a@x>", sha256="a" * 64, stored_path="/old/root/file.eml"))
+        db.insert(_record(message_id="<b@x>", sha256="b" * 64, stored_path="/other/path/file.eml"))
+        updated = db.rewrite_paths("/old/root", "/new/root")
+        assert updated == 1
+        rows = {r["stored_path"] for r in db.recent(10)}
+        assert "/new/root/file.eml" in rows
+        assert "/other/path/file.eml" in rows
+
+
 class TestIntegrity:
     def test_integrity_check_passes(self, db):
         db.insert(_record())

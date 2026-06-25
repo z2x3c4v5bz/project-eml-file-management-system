@@ -196,6 +196,37 @@ class Database:
         conn = self._conn()
         return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
+    def rewrite_paths(self, old_root: str, new_root: str) -> int:
+        """Replace old_root prefix with new_root in all stored_path values. Returns count updated."""
+        old = pathlib.PurePath(old_root)
+        new = pathlib.PurePath(new_root)
+        conn = self._conn()
+        rows = conn.execute("SELECT id, stored_path FROM messages").fetchall()
+        updated = 0
+        for row_id, path in rows:
+            if not path:
+                continue
+            try:
+                rel = pathlib.PurePath(path).relative_to(old)
+                conn.execute(
+                    "UPDATE messages SET stored_path = ? WHERE id = ?",
+                    (str(new / rel), row_id),
+                )
+                updated += 1
+            except ValueError:
+                pass
+        conn.commit()
+        return updated
+
+    def replace_file_and_reinit(self, source_path: str) -> None:
+        """Replace the database file with source_path and reinitialise the connection."""
+        import shutil
+        if hasattr(self._local, "conn"):
+            self._local.conn.close()
+            del self._local.conn
+        shutil.copy2(source_path, self._path)
+        self._init()
+
     def check_integrity(self) -> bool:
         result = self._conn().execute("PRAGMA integrity_check").fetchone()
         return result[0] == "ok"

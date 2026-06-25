@@ -1,9 +1,14 @@
+import datetime
+import json
 import logging
 import pathlib
 import queue
+import shutil
 import subprocess
+import tempfile
 import threading
 import tkinter as tk
+import zipfile
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
@@ -71,6 +76,15 @@ class App(tk.Tk):
             side=tk.LEFT, padx=2, pady=2
         )
         ttk.Button(bar, text="Settings", command=self._open_settings).pack(
+            side=tk.LEFT, padx=2, pady=2
+        )
+
+        ttk.Separator(bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=4)
+
+        ttk.Button(bar, text="Export Archive…", command=self._export_archive).pack(
+            side=tk.LEFT, padx=2, pady=2
+        )
+        ttk.Button(bar, text="Import Archive…", command=self._import_archive).pack(
             side=tk.LEFT, padx=2, pady=2
         )
 
@@ -144,6 +158,166 @@ class App(tk.Tk):
             self._config.save(self._config_path)
             self._processor.config = self._config
             self._main.set_watch_paths(self._config.watch_paths)
+
+    # ------------------------------------------------------------------ archive export / import
+
+    def _export_archive(self):
+        archive_root = pathlib.Path(self._config.archive_root)
+        if not archive_root.exists():
+            messagebox.showerror(
+                "Export Archive",
+                f"Archive root does not exist:\n{archive_root}\n\n"
+                "Configure a valid Archive Root in Settings first.",
+            )
+            return
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = filedialog.asksaveasfilename(
+            defaultextension=".zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+            initialfile=f"eml_backup_{ts}.zip",
+            title="Export Archive",
+        )
+        if not out_path:
+            return
+
+        try:
+            self.config(cursor="watch")
+            self.update()
+            manifest = {
+                "version": 1,
+                "archive_root": str(archive_root),
+                "exported_at": datetime.datetime.utcnow().isoformat(),
+            }
+            file_count = 0
+            with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+                zf.write(self._db._path, "database.db")
+                for src in archive_root.rglob("*"):
+                    if src.is_file():
+                        zf.write(src, f"files/{src.relative_to(archive_root)}")
+                        file_count += 1
+            messagebox.showinfo(
+                "Export Archive",
+                f"Exported {file_count} file(s) to:\n{out_path}",
+            )
+        except Exception as exc:
+            messagebox.showerror("Export Archive", f"Export failed:\n{exc}")
+        finally:
+            self.config(cursor="")
+
+    def _import_archive(self):
+        in_path = filedialog.askopenfilename(
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+            title="Import Archive",
+        )
+        if not in_path:
+            return
+
+        # Validate before asking the user to confirm
+        try:
+            with zipfile.ZipFile(in_path, "r") as zf:
+                names = zf.namelist()
+                if "manifest.json" not in names:
+                    messagebox.showerror("Import Archive", "Invalid archive: missing manifest.json")
+                    return
+                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+                if manifest.get("version") != 1:
+                    messagebox.showerror(
+                        "Import Archive",
+                        f"Unsupported archive version: {manifest.get('version')}",
+                    )
+                    return
+                if "database.db" not in names:
+                    messagebox.showerror("Import Archive", "Invalid archive: missing database.db")
+                    return
+        except zipfile.BadZipFile:
+            messagebox.showerror("Import Archive", "The selected file is not a valid ZIP archive.")
+            return
+        except Exception as exc:
+            messagebox.showerror("Import Archive", f"Failed to read archive:\n{exc}")
+            return
+
+        old_root = manifest.get("archive_root", "")
+        exported_at = manifest.get("exported_at", "unknown")
+
+        if not messagebox.askyesno(
+            "Import Archive — Replace All Data",
+            f"This will REPLACE your current database and archived emails.\n\n"
+            f"Backup archive root: {old_root}\n"
+            f"Exported at:         {exported_at}\n\n"
+            f"Emails currently in the app but not in this backup will no longer appear "
+            f"(files on disk are not deleted).\n\n"
+            f"This cannot be undone. Continue?",
+            icon="warning",
+        ):
+            return
+
+        new_root = filedialog.askdirectory(
+            title="Select destination folder for archived emails",
+            initialdir=self._config.archive_root,
+        )
+        if not new_root:
+            return
+        new_root_path = pathlib.Path(new_root)
+
+        was_running = self._running
+        if was_running:
+            self._stop_monitoring()
+
+        try:
+            self.config(cursor="watch")
+            self.update()
+
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = pathlib.Path(tmp)
+
+                with zipfile.ZipFile(in_path, "r") as zf:
+                    zf.extract("database.db", tmp_path)
+                    file_count = 0
+                    prefix = "files/"
+                    for entry in zf.infolist():
+                        name = entry.filename
+                        if name.startswith(prefix) and not entry.is_dir():
+                            dest = new_root_path / name[len(prefix):]
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            dest.write_bytes(zf.read(name))
+                            file_count += 1
+
+                # Rewrite stored_path values in the extracted DB, then swap it in
+                tmp_db_path = str(tmp_path / "database.db")
+                tmp_db = Database(tmp_db_path)
+                updated = tmp_db.rewrite_paths(old_root, str(new_root_path))
+                if hasattr(tmp_db._local, "conn"):
+                    tmp_db._local.conn.close()
+
+                self._db.replace_file_and_reinit(tmp_db_path)
+
+            # Update config archive_root if the destination differs
+            if new_root_path.resolve() != pathlib.Path(self._config.archive_root).resolve():
+                self._config.archive_root = str(new_root_path)
+                self._config.save(self._config_path)
+                self._processor.config = self._config
+
+            self._main.set_watch_paths(self._config.watch_paths)
+            self._main.refresh()
+
+            all_rows = self._db.search(limit=100_000)
+            orphans = sum(
+                1 for r in all_rows if not pathlib.Path(r["stored_path"]).exists()
+            )
+            msg = (
+                f"Import complete.\n"
+                f"{file_count} file(s) extracted, {updated} record(s) updated."
+            )
+            if orphans:
+                msg += f"\n\nWarning: {orphans} record(s) point to missing files."
+            messagebox.showinfo("Import Archive", msg)
+
+        except Exception as exc:
+            messagebox.showerror("Import Archive", f"Import failed:\n{exc}")
+        finally:
+            self.config(cursor="")
 
     # ------------------------------------------------------------------ worker
 

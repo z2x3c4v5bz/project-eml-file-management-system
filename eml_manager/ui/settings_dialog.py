@@ -1,6 +1,7 @@
 import copy
+import pathlib
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 _TIMEZONES = [
@@ -84,6 +85,12 @@ class SettingsDialog(tk.Toplevel):
         btns.pack(fill=tk.X, padx=8, pady=(0, 8))
         ttk.Button(btns, text="Save", command=self._save).pack(side=tk.RIGHT, padx=2)
         ttk.Button(btns, text="Cancel", command=self.destroy).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(btns, text="Export Settings…", command=self._export_settings).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Button(btns, text="Import Settings…", command=self._import_settings).pack(
+            side=tk.LEFT, padx=2
+        )
 
     # --- tab builders ---
 
@@ -164,6 +171,64 @@ class SettingsDialog(tk.Toplevel):
             state="readonly",
             width=10,
         ).grid(row=7, column=0, sticky=tk.W)
+
+    # --- settings export / import ---
+
+    def _export_settings(self):
+        out_path = filedialog.asksaveasfilename(
+            defaultextension=".yml",
+            filetypes=[("YAML files", "*.yml"), ("All files", "*.*")],
+            initialfile="eml_manager_settings.yml",
+            title="Export Settings",
+        )
+        if not out_path:
+            return
+        try:
+            # Strip machine-specific paths so the file is portable
+            from ..config import Config
+            export_cfg = copy.deepcopy(self._cfg)
+            defaults = Config()
+            export_cfg.db_path = defaults.db_path
+            export_cfg.log_path = defaults.log_path
+            export_cfg.save(pathlib.Path(out_path))
+            messagebox.showinfo("Export Settings", f"Settings exported to:\n{out_path}")
+        except Exception as exc:
+            messagebox.showerror("Export Settings", f"Export failed:\n{exc}")
+
+    def _import_settings(self):
+        in_path = filedialog.askopenfilename(
+            filetypes=[("YAML files", "*.yml *.yaml"), ("All files", "*.*")],
+            title="Import Settings",
+        )
+        if not in_path:
+            return
+        try:
+            from ..config import Config
+            loaded = Config.load(pathlib.Path(in_path))
+            # Preserve machine-specific paths from the current running config
+            loaded.db_path = self._cfg.db_path
+            loaded.log_path = self._cfg.log_path
+            self._cfg = loaded
+            self._apply_cfg_to_fields()
+            messagebox.showinfo(
+                "Import Settings",
+                "Settings loaded. Review and click Save to apply.",
+            )
+        except Exception as exc:
+            messagebox.showerror("Import Settings", f"Import failed:\n{exc}")
+
+    def _apply_cfg_to_fields(self):
+        self._watch_lb.delete(0, tk.END)
+        for p in self._cfg.watch_paths:
+            self._watch_lb.insert(tk.END, p)
+        self._archive_var.set(self._cfg.archive_root)
+        self._dup_var.set(self._cfg.duplicates_folder)
+        self._dedupe_var.set(self._cfg.dedupe_policy)
+        self._limit_var.set(self._cfg.filename_limit)
+        self._tz_var.set(self._cfg.timezone)
+        self._stable_var.set(str(self._cfg.stable_check_seconds))
+        self._retry_var.set(self._cfg.retry_count)
+        self._log_level_var.set(self._cfg.log_level)
 
     # --- helpers ---
 
