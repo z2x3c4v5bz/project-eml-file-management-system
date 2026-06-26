@@ -146,13 +146,14 @@ class _TagEditDialog(tk.Toplevel):
 
 
 class MainView(ttk.Frame):
-    def __init__(self, parent, db, config: Config, bundle=None):
+    def __init__(self, parent, db, config: Config, bundle=None, on_global_tags_changed=None):
         super().__init__(parent)
         self._db = db
         self._config = config
         self._bundle = bundle
         self._results: List[dict] = []
         self._searching = False
+        self._on_global_tags_changed = on_global_tags_changed
         self._build()
 
     def _fmt_ts(self, ts: str | None) -> str:
@@ -179,6 +180,24 @@ class MainView(ttk.Frame):
             f"Sent From (YYYYMMDD, {_tz_label(config.timezone)}):"
         )
         self.refresh()
+
+    def _get_all_tags_merged(self) -> list[str]:
+        """Return sorted, deduplicated tags from the current archive and global known_tags."""
+        local: set[str] = set(self._db.get_all_tags()) if self._db else set()
+        global_: set[str] = set(self._config.known_tags)
+        return sorted(local | global_, key=str.lower)
+
+    def _merge_tags_to_global(self, tags_str: str) -> None:
+        """Add any new tags from tags_str into config.known_tags and persist."""
+        new_tags = {t.strip() for t in tags_str.split(",") if t.strip()}
+        if not new_tags:
+            return
+        existing = set(self._config.known_tags)
+        if new_tags <= existing:
+            return
+        self._config.known_tags = sorted(existing | new_tags, key=str.lower)
+        if self._on_global_tags_changed:
+            self._on_global_tags_changed()
 
     # ------------------------------------------------------------------ build
 
@@ -369,7 +388,7 @@ class MainView(ttk.Frame):
 
     def _refresh_tags_dropdown(self):
         """Refresh the Tags combobox values from the database just before it opens."""
-        self._tags_cb.configure(values=[""] + self._db.get_all_tags())
+        self._tags_cb.configure(values=[""] + self._get_all_tags_merged())
 
     def _populate(self, rows: List[dict]):
         selected = set(self._tree.selection())
@@ -447,14 +466,14 @@ class MainView(ttk.Frame):
     def _edit_tags(self, row: dict):
         current = row.get("tags") or ""
         subject = row.get("subject") or "(no subject)"
-        all_tags = self._db.get_all_tags()
-        dlg = _TagEditDialog(self, current, all_tags, subject)
+        dlg = _TagEditDialog(self, current, self._get_all_tags_merged(), subject)
         self.wait_window(dlg)
         if dlg.result is None:
             return
         self._db.update_tags(row["id"], dlg.result)
         row["tags"] = dlg.result.strip()
         self._tree.set(str(row["id"]), "tags", row["tags"])
+        self._merge_tags_to_global(dlg.result)
 
     def _edit_tags_selected(self):
         """Edit tags for all currently selected rows (single or multi)."""
@@ -480,7 +499,7 @@ class MainView(ttk.Frame):
             label = f"Edit tags for {count} selected items\n(tags differ — will replace all)"
         else:
             label = f"Edit tags for {count} selected items"
-        dlg = _TagEditDialog(self, initial, self._db.get_all_tags(), label)
+        dlg = _TagEditDialog(self, initial, self._get_all_tags_merged(), label)
         self.wait_window(dlg)
         if dlg.result is None:
             return
@@ -489,6 +508,7 @@ class MainView(ttk.Frame):
             self._db.update_tags(row["id"], dlg.result)
             row["tags"] = new_tags
             self._tree.set(str(row["id"]), "tags", new_tags)
+        self._merge_tags_to_global(dlg.result)
 
     def _delete_selected(self):
         sel = self._tree.selection()

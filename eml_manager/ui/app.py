@@ -111,7 +111,10 @@ class App(TkinterDnD.Tk):
         )
 
     def _build_main_view(self):
-        self._main = MainView(self, self._db, self._config, self._bundle)
+        self._main = MainView(
+            self, self._db, self._config, self._bundle,
+            on_global_tags_changed=self._save_config,
+        )
         self._main.pack(fill=tk.BOTH, expand=True)
         self._main.set_watch_paths(self._config.watch_paths)
 
@@ -257,10 +260,14 @@ class App(TkinterDnD.Tk):
             self._worker.start()
         messagebox.showinfo("Manual Scan", f"Enqueued {count} file(s) for processing.")
 
+    def _save_config(self):
+        self._config.save(self._config_path)
+
     def _open_settings(self):
         dlg = SettingsDialog(self, self._config)
         self.wait_window(dlg)
         if dlg.result:
+            dlg.result.known_tags = self._config.known_tags
             self._config = dlg.result
             self._config.save(self._config_path)
             if self._processor:
