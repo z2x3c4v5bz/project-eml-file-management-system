@@ -43,6 +43,7 @@ class Config:
     recent_archives: List[str] = field(default_factory=list)
     active_bundle: str = ""
     known_tags: List[str] = field(default_factory=list)
+    theme: str = "default"
 
     def save(self, path: pathlib.Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

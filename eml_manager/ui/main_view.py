@@ -68,15 +68,25 @@ def _local_date_to_utc(date_str: str, tz_name: str, end_of_day: bool = False) ->
     return dt_local.astimezone(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
+_D_BG  = "#1e1e1e"
+_D_FG  = "#d4d4d4"
+_D_IN  = "#3c3c3c"
+_D_SEL = "#0e639c"
+
+
 class _TagEditDialog(tk.Toplevel):
     """Modal dialog for editing comma-separated tags with quick-pick from prior tags."""
 
-    def __init__(self, parent, current_tags: str, all_tags: list[str], subject: str):
+    def __init__(self, parent, current_tags: str, all_tags: list[str], subject: str,
+                 is_dark: bool = False):
         super().__init__(parent)
         self.title("Edit Tags")
         self.resizable(False, False)
         self.result: str | None = None
         self._all_tags = all_tags
+        self._is_dark = is_dark
+        if is_dark:
+            self.configure(bg=_D_BG)
         self._build(current_tags, subject)
         self.transient(parent)
         self.grab_set()
@@ -107,9 +117,11 @@ class _TagEditDialog(tk.Toplevel):
             frm = ttk.Frame(self)
             frm.pack(padx=12, pady=(2, 8), fill=tk.BOTH)
             # tk.Listbox — no ttk equivalent
-            self._lb = tk.Listbox(
-                frm, height=6, width=42, selectmode=tk.BROWSE, activestyle="none"
-            )
+            lb_kw: dict = {"height": 6, "width": 42, "selectmode": tk.BROWSE, "activestyle": "none"}
+            if self._is_dark:
+                lb_kw.update(bg=_D_IN, fg=_D_FG, selectbackground=_D_SEL,
+                             selectforeground="white")
+            self._lb = tk.Listbox(frm, **lb_kw)
             sb = ttk.Scrollbar(frm, orient=tk.VERTICAL, command=self._lb.yview)
             self._lb.configure(yscrollcommand=sb.set)
             self._lb.pack(side=tk.LEFT, fill=tk.BOTH)
@@ -153,6 +165,7 @@ class MainView(ttk.Frame):
         self._bundle = bundle
         self._results: List[dict] = []
         self._searching = False
+        self._is_dark = False
         self._on_global_tags_changed = on_global_tags_changed
         self._build()
 
@@ -180,6 +193,19 @@ class MainView(ttk.Frame):
             f"Sent From (YYYYMMDD, {_tz_label(config.timezone)}):"
         )
         self.refresh()
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        dot_bg = _D_BG if is_dark else self._status_dot.master.cget("background")
+        self._status_dot.configure(bg=dot_bg)
+        if is_dark:
+            self._tree.tag_configure("error", foreground="#f48771")
+            self._tree.tag_configure("duplicate", foreground="#888888")
+            self._tree.tag_configure("open_link", foreground="#4fc1ff")
+        else:
+            self._tree.tag_configure("error", foreground="red")
+            self._tree.tag_configure("duplicate", foreground="gray")
+            self._tree.tag_configure("open_link", foreground="#0066CC")
 
     def _get_all_tags_merged(self) -> list[str]:
         """Return sorted, deduplicated tags from the current archive and global known_tags."""
@@ -466,7 +492,8 @@ class MainView(ttk.Frame):
     def _edit_tags(self, row: dict):
         current = row.get("tags") or ""
         subject = row.get("subject") or "(no subject)"
-        dlg = _TagEditDialog(self, current, self._get_all_tags_merged(), subject)
+        dlg = _TagEditDialog(self, current, self._get_all_tags_merged(), subject,
+                             is_dark=self._is_dark)
         self.wait_window(dlg)
         if dlg.result is None:
             return
@@ -499,7 +526,8 @@ class MainView(ttk.Frame):
             label = f"Edit tags for {count} selected items\n(tags differ — will replace all)"
         else:
             label = f"Edit tags for {count} selected items"
-        dlg = _TagEditDialog(self, initial, self._get_all_tags_merged(), label)
+        dlg = _TagEditDialog(self, initial, self._get_all_tags_merged(), label,
+                             is_dark=self._is_dark)
         self.wait_window(dlg)
         if dlg.result is None:
             return

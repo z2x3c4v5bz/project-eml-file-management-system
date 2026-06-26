@@ -161,6 +161,16 @@ class SettingsDialog(tk.Toplevel):
             width=10,
         ).grid(row=7, column=0, sticky=tk.W)
 
+        ttk.Label(tab, text="Theme:").grid(row=8, column=0, sticky=tk.W, pady=(8, 0))
+        self._theme_var = tk.StringVar(value=self._cfg.theme)
+        ttk.Combobox(
+            tab,
+            textvariable=self._theme_var,
+            values=["default", "dark"],
+            state="readonly",
+            width=10,
+        ).grid(row=9, column=0, sticky=tk.W)
+
     # --- settings export / import ---
 
     def _export_settings(self):
@@ -217,6 +227,7 @@ class SettingsDialog(tk.Toplevel):
         self._stable_var.set(str(self._cfg.stable_check_seconds))
         self._retry_var.set(self._cfg.retry_count)
         self._log_level_var.set(self._cfg.log_level)
+        self._theme_var.set(self._cfg.theme)
 
     # --- helpers ---
 
@@ -245,5 +256,6 @@ class SettingsDialog(tk.Toplevel):
         except ValueError:
             pass
         self._cfg.log_level = self._log_level_var.get()
+        self._cfg.theme = self._theme_var.get()
         self.result = self._cfg
         self.destroy()

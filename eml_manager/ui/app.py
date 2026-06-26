@@ -22,11 +22,20 @@ logger = logging.getLogger(__name__)
 
 _STATUS_COLORS = {"Running": "green", "Idle": "orange", "Stopped": "red"}
 
+# Dark theme palette (VS Code-inspired)
+_D_BG   = "#1e1e1e"
+_D_FG   = "#d4d4d4"
+_D_IN   = "#3c3c3c"   # input / field background
+_D_SEL  = "#0e639c"   # selection highlight
+_D_BTN  = "#2d2d2d"   # button / heading background
+_D_BDR  = "#454545"   # border / separator
+
 
 class App(TkinterDnD.Tk):
     def __init__(self, config: Config, config_path: pathlib.Path):
         super().__init__()
 
+        self._default_ttk_theme = ttk.Style(self).theme_use()
         self._config = config
         self._config_path = config_path
 
@@ -43,6 +52,7 @@ class App(TkinterDnD.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._build_ui()
+        self._apply_theme(self._config.theme)
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", self._on_drop)
         self._tick()
@@ -260,6 +270,84 @@ class App(TkinterDnD.Tk):
             self._worker.start()
         messagebox.showinfo("Manual Scan", f"Enqueued {count} file(s) for processing.")
 
+    def _apply_theme(self, theme: str) -> None:
+        is_dark = theme == "dark"
+        style = ttk.Style(self)
+        if is_dark:
+            style.theme_use("clam")
+            style.configure(".",
+                background=_D_BG, foreground=_D_FG,
+                troughcolor=_D_BG, selectbackground=_D_SEL, selectforeground="white",
+                fieldbackground=_D_IN, insertcolor=_D_FG,
+                bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            style.configure("TButton",
+                background=_D_BTN, foreground=_D_FG, relief=tk.FLAT, padding=4,
+                bordercolor=_D_BDR, darkcolor=_D_BTN, lightcolor=_D_BTN,
+            )
+            style.map("TButton",
+                background=[("active", _D_IN), ("disabled", _D_HEAD := "#252526")],
+                foreground=[("disabled", "#666666")],
+            )
+            style.configure("TEntry",
+                fieldbackground=_D_IN, foreground=_D_FG, insertcolor=_D_FG,
+                bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            style.configure("TCombobox",
+                fieldbackground=_D_IN, foreground=_D_FG, background=_D_BTN,
+                arrowcolor=_D_FG, bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            style.map("TCombobox",
+                fieldbackground=[("readonly", _D_IN)],
+                foreground=[("readonly", _D_FG)],
+                selectbackground=[("readonly", _D_IN)],
+                selectforeground=[("readonly", _D_FG)],
+            )
+            style.configure("TScrollbar",
+                background=_D_BTN, troughcolor="#252526", arrowcolor=_D_FG,
+                bordercolor=_D_BDR, darkcolor=_D_BTN, lightcolor=_D_BTN,
+            )
+            style.configure("Treeview",
+                background="#252526", foreground=_D_FG, fieldbackground="#252526",
+                bordercolor=_D_BDR, darkcolor="#252526", lightcolor="#252526",
+            )
+            style.configure("Treeview.Heading",
+                background=_D_BTN, foreground=_D_FG, relief=tk.FLAT,
+                bordercolor=_D_BDR, darkcolor=_D_BTN, lightcolor=_D_BTN,
+            )
+            style.map("Treeview",
+                background=[("selected", _D_SEL)],
+                foreground=[("selected", "white")],
+            )
+            style.configure("TLabelframe",
+                background=_D_BG, bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            style.configure("TLabelframe.Label", background=_D_BG, foreground=_D_FG)
+            style.configure("TNotebook",
+                background=_D_BG, bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            style.configure("TNotebook.Tab",
+                background=_D_BTN, foreground=_D_FG, padding=[8, 4],
+                bordercolor=_D_BDR, darkcolor=_D_BTN, lightcolor=_D_BTN,
+            )
+            style.map("TNotebook.Tab",
+                background=[("selected", _D_BG), ("active", _D_IN)],
+                foreground=[("selected", _D_FG)],
+            )
+            style.configure("TSeparator", background=_D_BDR)
+            style.configure("TSpinbox",
+                fieldbackground=_D_IN, foreground=_D_FG, insertcolor=_D_FG,
+                background=_D_BTN, arrowcolor=_D_FG,
+                bordercolor=_D_BDR, darkcolor=_D_BDR, lightcolor=_D_BDR,
+            )
+            self.configure(bg=_D_BG)
+            self._log_text.configure(bg="#252526", fg=_D_FG, insertbackground=_D_FG)
+        else:
+            style.theme_use(self._default_ttk_theme)
+            self.configure(bg=style.lookup("TFrame", "background"))
+            self._log_text.configure(bg="white", fg="black", insertbackground="black")
+        self._main.apply_theme(is_dark)
+
     def _save_config(self):
         self._config.save(self._config_path)
 
@@ -274,6 +362,7 @@ class App(TkinterDnD.Tk):
                 self._processor.config = self._config
             self._main.set_watch_paths(self._config.watch_paths)
             self._main.update_config(self._config)
+            self._apply_theme(self._config.theme)
 
     # ------------------------------------------------------------------ archive export / import
 
