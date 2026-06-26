@@ -130,11 +130,18 @@ class MainView(ttk.Frame):
         self._build()
 
     def _fmt_ts(self, ts: str | None) -> str:
-        """Format stored YYYYMMDDHHmmss as 'YYYY-MM-DD HH:mm:ss TZ' using configured timezone."""
+        """Format stored YYYYMMDDHHmmss as 'YYYY-MM-DD HH:mm:ss' in the configured timezone."""
         if ts and len(ts) == 14 and ts.isdigit():
-            label = _tz_label(self._config.timezone)
-            return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[8:10]}:{ts[10:12]}:{ts[12:14]} {label}"
+            return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
         return ts or ""
+
+    def update_config(self, config: Config) -> None:
+        """Apply a new Config (e.g. after Settings save) and re-render all Sent Date cells."""
+        self._config = config
+        self._sent_from_label_var.set(
+            f"Sent From (YYYYMMDD, {_tz_label(config.timezone)}):"
+        )
+        self.refresh()
 
     # ------------------------------------------------------------------ build
 
@@ -197,8 +204,10 @@ class MainView(ttk.Frame):
         ttk.Label(r3, text="Sender:").pack(side=tk.LEFT)
         self._sndr_var = tk.StringVar()
         ttk.Entry(r3, textvariable=self._sndr_var, width=30).pack(side=tk.LEFT, padx=(2, 12))
-        tz = _tz_label(self._config.timezone)
-        ttk.Label(r3, text=f"Sent From (YYYYMMDD, {tz}):").pack(side=tk.LEFT)
+        self._sent_from_label_var = tk.StringVar(
+            value=f"Sent From (YYYYMMDD, {_tz_label(self._config.timezone)}):"
+        )
+        ttk.Label(r3, textvariable=self._sent_from_label_var).pack(side=tk.LEFT)
         self._start_var = tk.StringVar()
         ttk.Entry(r3, textvariable=self._start_var, width=10).pack(side=tk.LEFT, padx=(2, 4))
         ttk.Label(r3, text="To:").pack(side=tk.LEFT)

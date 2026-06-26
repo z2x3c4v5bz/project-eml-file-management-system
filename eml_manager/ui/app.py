@@ -266,6 +266,7 @@ class App(TkinterDnD.Tk):
             if self._processor:
                 self._processor.config = self._config
             self._main.set_watch_paths(self._config.watch_paths)
+            self._main.update_config(self._config)
 
     # ------------------------------------------------------------------ archive export / import
 
