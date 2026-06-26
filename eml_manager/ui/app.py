@@ -114,7 +114,6 @@ class App(TkinterDnD.Tk):
         self._main = MainView(self, self._db, self._config, self._bundle)
         self._main.pack(fill=tk.BOTH, expand=True)
         self._main.set_watch_paths(self._config.watch_paths)
-        self._main.enable_drop(self._on_drop)
 
     def _build_log_panel(self):
         frame = ttk.LabelFrame(self, text="Log", padding=2)

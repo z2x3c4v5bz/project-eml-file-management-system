@@ -12,8 +12,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import List
 
-from tkinterdnd2 import DND_FILES
-
 from ..config import Config
 from ..database import Database
 from ..normalizer import strip_subject_prefixes
@@ -339,11 +337,6 @@ class MainView(ttk.Frame):
             self._tree.selection_set(to_restore)
 
     # ------------------------------------------------------------------ public setters (called by App)
-
-    def enable_drop(self, callback):
-        """Register the treeview as a drop target and forward events to callback."""
-        self._tree.drop_target_register(DND_FILES)
-        self._tree.dnd_bind("<<Drop>>", callback)
 
     def set_status(self, text: str, color: str):
         self._status_text.config(text=text)
