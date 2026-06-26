@@ -45,7 +45,7 @@ class Processor:
             self._move_to_duplicates(file_path)
             return {"status": "duplicate", "original_id": existing["id"], "path": str(file_path)}
 
-        timestamp = normalize_timestamp(meta["sent_dt"], self.config.timezone)
+        timestamp = normalize_timestamp(meta["sent_dt"])
         pure_subject = strip_subject_prefixes(meta["subject"])
         dest_folder = self.bundle.emails_root / make_folder_name(pure_subject)
         dest_folder.mkdir(parents=True, exist_ok=True)

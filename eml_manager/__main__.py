@@ -148,7 +148,7 @@ def main():
         if not bundle.is_valid():
             print(f"Error: not a valid archive bundle: {bundle_path}", file=sys.stderr)
             sys.exit(1)
-        db = Database(bundle.db_path, str(bundle.emails_root))
+        db = Database(bundle.db_path, str(bundle.emails_root), tz_name=config.timezone)
 
         if args.command == "scan":
             cmd_scan(args, config, db, bundle)

@@ -168,7 +168,7 @@ class App(TkinterDnD.Tk):
         if self._running:
             self._stop_monitoring()
         self._bundle = bundle
-        self._db = Database(bundle.db_path, str(bundle.emails_root))
+        self._db = Database(bundle.db_path, str(bundle.emails_root), tz_name=self._config.timezone)
         self._processor = Processor(self._config, self._db, bundle)
         self.title(f"EML File Manager — {bundle.name}")
         self._main.set_bundle(bundle, self._db)

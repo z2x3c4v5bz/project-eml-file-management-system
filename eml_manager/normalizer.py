@@ -11,22 +11,11 @@ _SUBJECT_PREFIX = re.compile(
 )
 
 
-def normalize_timestamp(dt: datetime.datetime, tz_name: str = "UTC") -> str:
-    """Return YYYYMMDDHHmmss in the configured timezone."""
+def normalize_timestamp(dt: datetime.datetime) -> str:
+    """Return YYYYMMDDHHmmss in UTC. Naive datetimes are assumed to be UTC."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
-
-    if tz_name and tz_name.upper() != "UTC":
-        try:
-            import zoneinfo
-
-            dt = dt.astimezone(zoneinfo.ZoneInfo(tz_name))
-        except Exception:
-            dt = dt.astimezone(datetime.timezone.utc)
-    else:
-        dt = dt.astimezone(datetime.timezone.utc)
-
-    return dt.strftime("%Y%m%d%H%M%S")
+    return dt.astimezone(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
 def normalize_text(text: str, limit: int = 200) -> str:

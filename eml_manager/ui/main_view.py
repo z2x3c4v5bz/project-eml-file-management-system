@@ -4,6 +4,7 @@ Sections A and B from CAD §5.1.1 are a single unified view, not tabs.
 """
 
 import csv
+import datetime
 import os
 import pathlib
 import re
@@ -35,11 +36,34 @@ def _tz_label(tz_name: str) -> str:
     if not tz_name or tz_name.upper() == "UTC":
         return "UTC"
     try:
-        import datetime
         import zoneinfo
         return datetime.datetime.now(zoneinfo.ZoneInfo(tz_name)).strftime("%Z")
     except Exception:
         return tz_name
+
+
+def _local_date_to_utc(date_str: str, tz_name: str, end_of_day: bool = False) -> str:
+    """Convert a YYYYMMDD (or YYYYMMDDHHmmss) string in tz_name to a UTC YYYYMMDDHHmmss string."""
+    if not date_str:
+        return date_str
+    if len(date_str) == 8 and date_str.isdigit():
+        y, mo, d = int(date_str[:4]), int(date_str[4:6]), int(date_str[6:])
+        h, mi, s = (23, 59, 59) if end_of_day else (0, 0, 0)
+    elif len(date_str) == 14 and date_str.isdigit():
+        y, mo, d = int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8])
+        h, mi, s = int(date_str[8:10]), int(date_str[10:12]), int(date_str[12:14])
+    else:
+        return date_str
+    if tz_name and tz_name.upper() != "UTC":
+        try:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(tz_name)
+        except Exception:
+            tz = datetime.timezone.utc
+    else:
+        tz = datetime.timezone.utc
+    dt_local = datetime.datetime(y, mo, d, h, mi, s, tzinfo=tz)
+    return dt_local.astimezone(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
 class _TagEditDialog(tk.Toplevel):
@@ -130,10 +154,22 @@ class MainView(ttk.Frame):
         self._build()
 
     def _fmt_ts(self, ts: str | None) -> str:
-        """Format stored YYYYMMDDHHmmss as 'YYYY-MM-DD HH:mm:ss' in the configured timezone."""
-        if ts and len(ts) == 14 and ts.isdigit():
-            return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
-        return ts or ""
+        """Convert stored UTC YYYYMMDDHHmmss to the configured timezone and format for display."""
+        if not (ts and len(ts) == 14 and ts.isdigit()):
+            return ts or ""
+        dt = datetime.datetime(
+            int(ts[:4]), int(ts[4:6]), int(ts[6:8]),
+            int(ts[8:10]), int(ts[10:12]), int(ts[12:14]),
+            tzinfo=datetime.timezone.utc,
+        )
+        tz_name = self._config.timezone
+        if tz_name and tz_name.upper() != "UTC":
+            try:
+                import zoneinfo
+                dt = dt.astimezone(zoneinfo.ZoneInfo(tz_name))
+            except Exception:
+                pass
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     def update_config(self, config: Config) -> None:
         """Apply a new Config (e.g. after Settings save) and re-render all Sent Date cells."""
@@ -305,14 +341,15 @@ class MainView(ttk.Frame):
 
     def _search(self):
         self._searching = True
+        tz = self._config.timezone
         rows = self._db.search(
             keyword=self._kw_var.get().strip(),
             mail_type=self._type_var.get().strip(),
             subject=self._subj_var.get().strip(),
             sender=self._sndr_var.get().strip(),
             tags=self._tags_var.get().strip(),
-            start_date=self._start_var.get().strip(),
-            end_date=self._end_var.get().strip(),
+            start_date=_local_date_to_utc(self._start_var.get().strip(), tz, end_of_day=False),
+            end_date=_local_date_to_utc(self._end_var.get().strip(), tz, end_of_day=True),
             limit=500,
         )
         self._populate(rows)

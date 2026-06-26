@@ -12,17 +12,17 @@ def _utc(year, month, day, hour=0, minute=0, second=0) -> datetime.datetime:
 class TestNormalizeTimestamp:
     def test_basic_utc(self):
         dt = _utc(2026, 6, 24, 14, 30, 55)
-        assert normalize_timestamp(dt, "UTC") == "20260624143055"
+        assert normalize_timestamp(dt) == "20260624143055"
 
     def test_naive_treated_as_utc(self):
         dt = datetime.datetime(2026, 6, 24, 14, 30, 55)  # no tzinfo
-        assert normalize_timestamp(dt, "UTC") == "20260624143055"
+        assert normalize_timestamp(dt) == "20260624143055"
 
     def test_offset_aware_converted(self):
         tz_plus8 = datetime.timezone(datetime.timedelta(hours=8))
         dt = datetime.datetime(2026, 6, 25, 9, 15, 0, tzinfo=tz_plus8)
         # UTC equivalent is 01:15:00 on the same day
-        assert normalize_timestamp(dt, "UTC") == "20260625011500"
+        assert normalize_timestamp(dt) == "20260625011500"
 
 
 class TestNormalizeText:

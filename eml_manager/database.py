@@ -25,13 +25,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_sha256  ON messages(sha256);
 CREATE        INDEX IF NOT EXISTS idx_msg_subject ON messages(subject);
 CREATE        INDEX IF NOT EXISTS idx_msg_sender  ON messages(sender);
 CREATE        INDEX IF NOT EXISTS idx_msg_ts      ON messages(sent_timestamp);
+CREATE TABLE IF NOT EXISTS metadata (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
 class Database:
-    def __init__(self, db_path: str, emails_root: Optional[str] = None):
+    def __init__(self, db_path: str, emails_root: Optional[str] = None, tz_name: str = "UTC"):
         self._path = db_path
         self._emails_root = emails_root
+        self._tz_name = tz_name
         self._local = threading.local()
         pathlib.Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init()
@@ -75,6 +80,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_msg_pure_subject ON messages(pure_subject)"
         )
         conn.commit()
+        self._migrate_timestamps_to_utc(conn)
         # Convert absolute stored_path values (from pre-refactor databases) to paths
         # relative to the bundle's emails/ root. Only runs when an emails_root is set
         # and at least one stored_path is still absolute.
@@ -102,6 +108,49 @@ class Database:
                         (str(rel), row_id),
                     )
                 conn.commit()
+
+    def _migrate_timestamps_to_utc(self, conn: sqlite3.Connection):
+        """One-time migration: convert stored sent_timestamp values from the previously
+        configured timezone to UTC. Skipped on subsequent runs via a metadata flag."""
+        row = conn.execute(
+            "SELECT value FROM metadata WHERE key = 'timestamp_utc_migrated'"
+        ).fetchone()
+        if row:
+            return
+
+        if self._tz_name and self._tz_name.upper() != "UTC":
+            import datetime
+            import zoneinfo
+            try:
+                tz = zoneinfo.ZoneInfo(self._tz_name)
+            except Exception:
+                tz = datetime.timezone.utc
+
+            rows = conn.execute(
+                "SELECT id, sent_timestamp FROM messages WHERE sent_timestamp IS NOT NULL"
+            ).fetchall()
+            for row_id, ts in rows:
+                if not (ts and len(ts) == 14 and ts.isdigit()):
+                    continue
+                try:
+                    dt = datetime.datetime(
+                        int(ts[:4]), int(ts[4:6]), int(ts[6:8]),
+                        int(ts[8:10]), int(ts[10:12]), int(ts[12:14]),
+                        tzinfo=tz,
+                    )
+                    utc_ts = dt.astimezone(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+                    conn.execute(
+                        "UPDATE messages SET sent_timestamp = ? WHERE id = ?",
+                        (utc_ts, row_id),
+                    )
+                except (ValueError, Exception):
+                    pass
+            conn.commit()
+
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('timestamp_utc_migrated', '1')"
+        )
+        conn.commit()
 
     # --- duplicate detection ---
 
