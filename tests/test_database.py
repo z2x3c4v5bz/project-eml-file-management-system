@@ -117,6 +117,13 @@ class TestSearch:
         assert len(db.search(start_date="20260624000000", end_date="20260624235959")) == 1
         assert len(db.search(start_date="20260625000000")) == 0
 
+    def test_date_range_yyyymmdd_input(self, db):
+        # User enters 8-char YYYYMMDD; end_date must be padded to include the full day.
+        db.insert(_record())
+        assert len(db.search(start_date="20260624", end_date="20260624")) == 1
+        assert len(db.search(start_date="20260624", end_date="20260623")) == 0
+        assert len(db.search(start_date="20260625", end_date="20260625")) == 0
+
     def test_empty_filter_returns_all(self, db):
         for i in range(3):
             db.insert(_record(message_id=f"<m{i}@x.com>", sha256=f"{'a' * 56}{i:08d}"))

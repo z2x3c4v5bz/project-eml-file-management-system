@@ -213,6 +213,9 @@ class Database:
             conditions.append("sent_timestamp >= ?")
             params.append(start_date)
         if end_date:
+            # Pad a bare YYYYMMDD to YYYYMMDD235959 so the full end day is included.
+            if len(end_date) == 8 and end_date.isdigit():
+                end_date = end_date + "235959"
             conditions.append("sent_timestamp <= ?")
             params.append(end_date)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""

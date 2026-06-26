@@ -30,11 +30,16 @@ def _detect_mail_type(subject: str) -> str:
     return ""
 
 
-def _fmt_ts(ts: str | None) -> str:
-    """Format stored YYYYMMDDHHmmss timestamp as YYYY-MM-DD HH:mm:ss for display."""
-    if ts and len(ts) == 14 and ts.isdigit():
-        return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[8:10]}:{ts[10:12]}:{ts[12:14]}"
-    return ts or ""
+def _tz_label(tz_name: str) -> str:
+    """Return a short timezone abbreviation for display (e.g. 'UTC', 'JST', 'EST')."""
+    if not tz_name or tz_name.upper() == "UTC":
+        return "UTC"
+    try:
+        import datetime
+        import zoneinfo
+        return datetime.datetime.now(zoneinfo.ZoneInfo(tz_name)).strftime("%Z")
+    except Exception:
+        return tz_name
 
 
 class _TagEditDialog(tk.Toplevel):
@@ -124,6 +129,13 @@ class MainView(ttk.Frame):
         self._searching = False
         self._build()
 
+    def _fmt_ts(self, ts: str | None) -> str:
+        """Format stored YYYYMMDDHHmmss as 'YYYY-MM-DD HH:mm:ss TZ' using configured timezone."""
+        if ts and len(ts) == 14 and ts.isdigit():
+            label = _tz_label(self._config.timezone)
+            return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[8:10]}:{ts[10:12]}:{ts[12:14]} {label}"
+        return ts or ""
+
     # ------------------------------------------------------------------ build
 
     def _build(self):
@@ -185,7 +197,8 @@ class MainView(ttk.Frame):
         ttk.Label(r3, text="Sender:").pack(side=tk.LEFT)
         self._sndr_var = tk.StringVar()
         ttk.Entry(r3, textvariable=self._sndr_var, width=30).pack(side=tk.LEFT, padx=(2, 12))
-        ttk.Label(r3, text="Sent From (YYYYMMDD):").pack(side=tk.LEFT)
+        tz = _tz_label(self._config.timezone)
+        ttk.Label(r3, text=f"Sent From (YYYYMMDD, {tz}):").pack(side=tk.LEFT)
         self._start_var = tk.StringVar()
         ttk.Entry(r3, textvariable=self._start_var, width=10).pack(side=tk.LEFT, padx=(2, 4))
         ttk.Label(r3, text="To:").pack(side=tk.LEFT)
@@ -325,7 +338,7 @@ class MainView(ttk.Frame):
                     _detect_mail_type(orig),
                     strip_subject_prefixes(orig),
                     row["sender"] or "",
-                    _fmt_ts(row["sent_timestamp"]),
+                    self._fmt_ts(row["sent_timestamp"]),
                     row.get("tags") or "",
                     "Open ↗",
                     row["status"],
