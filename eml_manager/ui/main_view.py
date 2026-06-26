@@ -196,8 +196,7 @@ class MainView(ttk.Frame):
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = is_dark
-        dot_bg = _D_BG if is_dark else self._status_dot.master.cget("background")
-        self._status_dot.configure(bg=dot_bg)
+        self._status_dot.configure(bg=_D_BG if is_dark else self._status_dot_default_bg)
         if is_dark:
             self._tree.tag_configure("error", foreground="#f48771")
             self._tree.tag_configure("duplicate", foreground="#888888")
@@ -239,6 +238,7 @@ class MainView(ttk.Frame):
         # tk.Label kept intentionally: ttk.Label ignores fg= under the Windows
         # vista/xpnative theme; we need direct fg control for the colour dot.
         self._status_dot = tk.Label(panel, text="●", fg="orange", font=("", 14))
+        self._status_dot_default_bg = self._status_dot.cget("bg")
         self._status_dot.pack(side=tk.LEFT)
 
         self._status_text = ttk.Label(panel, text="Idle", width=8, anchor=tk.W)
