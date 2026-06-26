@@ -5,17 +5,21 @@ Sections A and B from CAD §5.1.1 are a single unified view, not tabs.
 
 import csv
 import datetime
+import logging
 import os
 import pathlib
 import re
 import subprocess
 import tkinter as tk
+import zoneinfo
 from tkinter import filedialog, messagebox, ttk
 from typing import List
 
 from ..config import Config
 from ..database import Database
 from ..normalizer import strip_subject_prefixes
+
+logger = logging.getLogger(__name__)
 
 
 _RE_PAT = re.compile(r"^(?:re|回复|回覆|答复)\s*[：:]", re.IGNORECASE)
@@ -36,7 +40,6 @@ def _tz_label(tz_name: str) -> str:
     if not tz_name or tz_name.upper() == "UTC":
         return "UTC"
     try:
-        import zoneinfo
         return datetime.datetime.now(zoneinfo.ZoneInfo(tz_name)).strftime("%Z")
     except Exception:
         return tz_name
@@ -56,7 +59,6 @@ def _local_date_to_utc(date_str: str, tz_name: str, end_of_day: bool = False) ->
         return date_str
     if tz_name and tz_name.upper() != "UTC":
         try:
-            import zoneinfo
             tz = zoneinfo.ZoneInfo(tz_name)
         except Exception:
             tz = datetime.timezone.utc
@@ -165,10 +167,9 @@ class MainView(ttk.Frame):
         tz_name = self._config.timezone
         if tz_name and tz_name.upper() != "UTC":
             try:
-                import zoneinfo
                 dt = dt.astimezone(zoneinfo.ZoneInfo(tz_name))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Timezone conversion failed for %r: %s", tz_name, e)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     def update_config(self, config: Config) -> None:
