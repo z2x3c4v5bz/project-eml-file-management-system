@@ -78,6 +78,7 @@ class Processor:
                 "status": "processed",
                 "error_message": None,
                 "tags": auto_tags,
+                "has_attachment": 1 if meta["has_attachment"] else 0,
             }
         )
         logger.info("Processed %s → %s (id=%d)", file_path.name, dest_path, row_id)

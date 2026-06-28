@@ -158,6 +158,37 @@ class TestAutoTagBySubject:
         assert not row["tags"]
 
 
+class TestAttachments:
+    def test_attachment_flag_stored(self, env):
+        cfg, db, proc, tmp, bundle = env
+        src = _copy("with-attachment.eml", tmp / "watch")
+        proc.process(src)
+        rows = db.recent(1)
+        assert rows[0]["has_attachment"] == 1
+
+    def test_no_attachment_flag_zero(self, env):
+        cfg, db, proc, tmp, bundle = env
+        src = _copy("simple.eml", tmp / "watch")
+        proc.process(src)
+        rows = db.recent(1)
+        assert rows[0]["has_attachment"] == 0
+
+    def test_backfill_recovers_flag_for_legacy_rows(self, env):
+        cfg, db, proc, tmp, bundle = env
+        # Process a real attachment email, then simulate a legacy row by clearing
+        # its flag to 0 as if it were imported before the column existed.
+        src = _copy("with-attachment.eml", tmp / "watch")
+        res = proc.process(src)
+        conn = db._conn()
+        conn.execute("UPDATE messages SET has_attachment = 0 WHERE id = ?", (res["id"],))
+        conn.commit()
+        assert db.recent(1)[0]["has_attachment"] == 0
+
+        changed = db.backfill_attachment_flags()
+        assert changed == 1
+        assert db.recent(1)[0]["has_attachment"] == 1
+
+
 class TestEdgeCases:
     def test_missing_date_header(self, env):
         cfg, db, proc, tmp, bundle = env

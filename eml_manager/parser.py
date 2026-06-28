@@ -52,6 +52,27 @@ def decode_mime_words(header: Optional[str]) -> str:
     return "".join(chunks)
 
 
+def has_attachments(msg) -> bool:
+    """Return True if the parsed message carries at least one attachment.
+
+    A part counts as an attachment when its Content-Disposition is "attachment",
+    or when it advertises a filename (covers clients that omit the disposition
+    header but still name the file). Inline-only parts without a filename — the
+    plain-text/HTML alternatives of an ordinary email — are ignored.
+    """
+    if not msg.is_multipart():
+        return False
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        disposition = str(part.get("Content-Disposition") or "").lower()
+        if "attachment" in disposition:
+            return True
+        if part.get_filename():
+            return True
+    return False
+
+
 def extract_sender_name(from_header: str) -> str:
     """Return display name, or local-part of address, from a From header."""
     display, addr = parseaddr(from_header)
@@ -94,4 +115,5 @@ def parse_eml(file_path: pathlib.Path) -> dict:
         "sender": sender,
         "sent_dt": sent_dt,
         "sha256": sha256,
+        "has_attachment": has_attachments(msg),
     }

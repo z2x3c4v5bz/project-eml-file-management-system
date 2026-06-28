@@ -253,12 +253,15 @@ class MainView(ttk.Frame):
         # col 0/2 hold right-aligned labels, col 1/3 hold the matching inputs.
         grid = ttk.Frame(bar)
         grid.pack(fill=tk.X)
-        grid.columnconfigure(1, weight=1)
+        # The three row-1 input fields (Keyword | Tags | Has attachment) share the
+        # width 2:1:1 via these column weights. Rows 2–4 reuse columns 1 and 3 only.
+        grid.columnconfigure(1, weight=2)
         grid.columnconfigure(3, weight=1)
+        grid.columnconfigure(5, weight=1)
         lbl = dict(sticky=tk.E, padx=(0, 6), pady=3)
         fld = dict(sticky=tk.EW, padx=(0, 18), pady=3)
 
-        # Row 1: Keyword | Tags
+        # Row 1: Keyword | Tags | Has attachment
         ttk.Label(grid, text="Keyword:").grid(row=0, column=0, **lbl)
         self._kw_var = tk.StringVar()
         ttk.Entry(grid, textvariable=self._kw_var).grid(row=0, column=1, **fld)
@@ -270,6 +273,13 @@ class MainView(ttk.Frame):
             postcommand=self._refresh_tags_dropdown,
         )
         self._tags_cb.grid(row=0, column=3, **fld)
+        ttk.Label(grid, text="Attachment:").grid(row=0, column=4, **lbl)
+        self._attach_var = tk.StringVar(value="Any")
+        ttk.Combobox(
+            grid, textvariable=self._attach_var,
+            state="readonly",
+            values=("Any", "With attachment", "Without attachment"),
+        ).grid(row=0, column=5, **fld)
 
         # Row 2: Subject | Sender
         ttk.Label(grid, text="Subject:").grid(row=1, column=0, **lbl)
@@ -316,10 +326,11 @@ class MainView(ttk.Frame):
         frame = ttk.Frame(self)
         frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-        self._cols = ("type", "subject", "sender", "sent_timestamp", "tags", "open", "status")
+        self._cols = ("attach", "type", "subject", "sender", "sent_timestamp", "tags", "open", "status")
         self._tree = ttk.Treeview(frame, columns=self._cols, show="headings", selectmode="extended")
 
         col_cfg = {
+            "attach":         ("📎",              36, 32),
             "type":           ("Type",           50, 40),
             "subject":        ("Subject",        220, 80),
             "sender":         ("Sender",         160, 60),
@@ -331,7 +342,8 @@ class MainView(ttk.Frame):
         for col in self._cols:
             label, width, minw = col_cfg[col]
             self._tree.heading(col, text=label)
-            self._tree.column(col, width=width, minwidth=minw)
+            anchor = tk.CENTER if col == "attach" else tk.W
+            self._tree.column(col, width=width, minwidth=minw, anchor=anchor)
 
         vsb = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self._tree.yview)
         hsb = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=self._tree.xview)
@@ -391,6 +403,7 @@ class MainView(ttk.Frame):
             subject=self._subj_var.get().strip(),
             sender=self._sndr_var.get().strip(),
             tags=self._tags_var.get().strip(),
+            has_attachment=self._attach_filter_value(),
             start_date=_local_date_to_utc(self._start_var.get().strip(), tz, end_of_day=False),
             end_date=_local_date_to_utc(self._end_var.get().strip(), tz, end_of_day=True),
             added_start=_local_date_to_utc_iso(self._added_start_var.get().strip(), tz, end_of_day=False),
@@ -406,11 +419,19 @@ class MainView(ttk.Frame):
         self._subj_var.set("")
         self._sndr_var.set("")
         self._tags_var.set("")
+        self._attach_var.set("Any")
         self._start_var.set("")
         self._end_var.set("")
         self._added_start_var.set("")
         self._added_end_var.set("")
         self.refresh()
+
+    def _attach_filter_value(self) -> str:
+        """Map the Attachment combobox selection to a Database.search flag."""
+        return {
+            "With attachment": "yes",
+            "Without attachment": "no",
+        }.get(self._attach_var.get(), "")
 
     def _refresh_tags_dropdown(self):
         """Refresh the Tags combobox values from the database just before it opens."""
@@ -427,6 +448,7 @@ class MainView(ttk.Frame):
                 tk.END,
                 iid=str(row["id"]),
                 values=(
+                    "📎" if row.get("has_attachment") else "",
                     _detect_mail_type(orig),
                     strip_subject_prefixes(orig),
                     row["sender"] or "",

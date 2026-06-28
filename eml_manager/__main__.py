@@ -82,6 +82,11 @@ def cmd_db_check(args, config: Config, db: Database):
     sys.exit(0 if ok else 1)
 
 
+def cmd_backfill_attachments(args, config: Config, db: Database):
+    changed = db.backfill_attachment_flags(force=args.force)
+    print(f"Backfilled has_attachment for {changed} record(s).")
+
+
 def cmd_export(args, config: Config, db: Database):
     rows = db.search(keyword=args.keyword or "", limit=100_000)
     if not rows:
@@ -123,6 +128,15 @@ def main():
     exp_p.add_argument("--keyword", default="", help="Filter by subject/sender keyword")
     exp_p.add_argument("--out", default="-", help="Output file path (- for stdout)")
 
+    bf_p = sub.add_parser(
+        "backfill-attachments",
+        help="Re-scan archived .eml files to populate has_attachment on old records",
+    )
+    bf_p.add_argument(
+        "--force", action="store_true",
+        help="Re-scan every record, not just those still flagged 0",
+    )
+
     args = parser.parse_args()
 
     if args.command == "version":
@@ -135,7 +149,7 @@ def main():
         config.log_level = "DEBUG"
     setup_logging(config)
 
-    if args.command in ("scan", "import", "db-check", "export"):
+    if args.command in ("scan", "import", "db-check", "export", "backfill-attachments"):
         bundle_path = args.bundle or config.active_bundle
         if not bundle_path:
             print(
@@ -158,6 +172,8 @@ def main():
             cmd_db_check(args, config, db)
         elif args.command == "export":
             cmd_export(args, config, db)
+        elif args.command == "backfill-attachments":
+            cmd_backfill_attachments(args, config, db)
     else:
         # gui (default)
         from .ui.app import App

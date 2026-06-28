@@ -112,6 +112,18 @@ class TestSearch:
         assert len(db.search(tags="invoice")) == 1
         assert len(db.search(tags="other")) == 0
 
+    def test_has_attachment_filter(self, db):
+        db.insert(_record(message_id="<a@x>", sha256="a" * 64, has_attachment=1))
+        db.insert(_record(message_id="<b@x>", sha256="b" * 64, has_attachment=0))
+        assert len(db.search(has_attachment="yes")) == 1
+        assert len(db.search(has_attachment="no")) == 1
+        assert len(db.search(has_attachment="")) == 2  # no filter → all rows
+
+    def test_has_attachment_defaults_to_zero(self, db):
+        # A record inserted without the column reads back as 0 (no attachment).
+        db.insert(_record())
+        assert db.recent(1)[0]["has_attachment"] == 0
+
     def test_date_range(self, db):
         db.insert(_record())
         assert len(db.search(start_date="20260624000000", end_date="20260624235959")) == 1
@@ -177,6 +189,38 @@ class TestFindTagsForSubject:
 
     def test_empty_subject_returns_none(self, db):
         assert db.find_tags_for_subject("") is None
+
+
+class TestAttachmentMigration:
+    def _make_legacy_db(self, path):
+        """Create a messages table that predates the has_attachment column."""
+        import sqlite3
+        conn = sqlite3.connect(str(path))
+        conn.execute(
+            "CREATE TABLE messages ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " message_id TEXT, sha256 TEXT NOT NULL, original_path TEXT,"
+            " stored_path TEXT NOT NULL, filename TEXT NOT NULL, subject TEXT,"
+            " pure_subject TEXT, sender TEXT, sent_timestamp TEXT,"
+            " parsed_at TEXT NOT NULL, status TEXT NOT NULL, error_message TEXT, tags TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO messages (sha256, stored_path, filename, subject, parsed_at, status)"
+            " VALUES ('deadbeef', 'Old/old.eml', 'old.eml', 'Old Mail', '2026-06-24T00:00:00Z', 'processed')"
+        )
+        conn.commit()
+        conn.close()
+
+    def test_legacy_db_gains_column_with_zero_default(self, tmp_path):
+        db_path = tmp_path / "legacy.db"
+        self._make_legacy_db(db_path)
+        db = Database(str(db_path))  # opening runs the migration
+        rows = db.recent(10)
+        assert len(rows) == 1
+        assert rows[0]["has_attachment"] == 0
+        # The new filter is usable on the upgraded database.
+        assert len(db.search(has_attachment="no")) == 1
+        assert len(db.search(has_attachment="yes")) == 0
 
 
 class TestIntegrity:

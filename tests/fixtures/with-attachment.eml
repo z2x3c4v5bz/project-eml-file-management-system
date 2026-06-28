@@ -1,0 +1,21 @@
+From: Alice Smith <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Report attached
+Date: Wed, 24 Jun 2026 14:30:55 +0000
+Message-ID: <attach123@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset=UTF-8
+
+Please find the report attached.
+
+--BOUNDARY
+Content-Type: application/pdf; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJ2VtbCB0ZXN0IGZpbGUK
+
+--BOUNDARY--

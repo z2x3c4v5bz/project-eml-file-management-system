@@ -37,6 +37,16 @@ def test_parse_display_name_sender():
     assert result["sender"] == "John Doe"
 
 
+def test_parse_detects_attachment():
+    result = parse_eml(FIXTURES / "with-attachment.eml")
+    assert result["has_attachment"] is True
+
+
+def test_parse_no_attachment_on_plain_email():
+    result = parse_eml(FIXTURES / "simple.eml")
+    assert result["has_attachment"] is False
+
+
 def test_decode_mime_words_base64():
     encoded = "=?UTF-8?b?SGVsbG8gV29ybGQ=?="
     assert decode_mime_words(encoded) == "Hello World"

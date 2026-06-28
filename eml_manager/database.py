@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS messages (
     parsed_at        TEXT NOT NULL,
     status           TEXT NOT NULL,
     error_message    TEXT,
-    tags             TEXT
+    tags             TEXT,
+    has_attachment   INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_msgid   ON messages(message_id) WHERE message_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_sha256  ON messages(sha256);
@@ -74,6 +75,13 @@ class Database:
                     "UPDATE messages SET pure_subject = ? WHERE id = ?",
                     (strip_subject_prefixes(subj), row_id),
                 )
+        # Older databases predate the attachment flag. Add it with a 0 default so
+        # existing rows read as "no attachment" until a backfill re-scans them
+        # (see backfill_attachment_flags); new inserts set the real value.
+        if "has_attachment" not in existing:
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN has_attachment INTEGER NOT NULL DEFAULT 0"
+            )
         # Index is created here (not in _SCHEMA) so it is always applied after the
         # column exists, whether this is a fresh DB or an upgraded one.
         conn.execute(
@@ -193,6 +201,50 @@ class Database:
         )
         conn.commit()
 
+    def backfill_attachment_flags(self, force: bool = False) -> int:
+        """Re-scan stored .eml files to populate has_attachment for old records.
+
+        Old databases gain the column with a default of 0; this re-reads each
+        archived file from emails_root and rewrites the flag with the real value.
+        By default only rows still at 0 are inspected (cheap, idempotent); pass
+        force=True to re-scan every row. Requires the Database to have been opened
+        with an emails_root. Returns the number of rows changed.
+
+        Missing or unreadable files are skipped, so a partially moved archive
+        backfills what it can without raising.
+        """
+        if not self._emails_root:
+            return 0
+        from .parser import has_attachments
+        import email
+        import email.policy
+
+        emails_root = pathlib.Path(self._emails_root)
+        conn = self._conn()
+        where = "" if force else "WHERE has_attachment = 0"
+        rows = conn.execute(
+            f"SELECT id, stored_path, has_attachment FROM messages {where}"
+        ).fetchall()
+        changed = 0
+        for row_id, stored_path, current in rows:
+            if not stored_path:
+                continue
+            p = pathlib.Path(stored_path)
+            if not p.is_absolute():
+                p = emails_root / p
+            try:
+                msg = email.message_from_bytes(p.read_bytes(), policy=email.policy.compat32)
+            except Exception:
+                continue
+            flag = 1 if has_attachments(msg) else 0
+            if flag != current:
+                conn.execute(
+                    "UPDATE messages SET has_attachment = ? WHERE id = ?", (flag, row_id)
+                )
+                changed += 1
+        conn.commit()
+        return changed
+
     def delete(self, row_ids: list[int]) -> None:
         conn = self._conn()
         placeholders = ",".join("?" * len(row_ids))
@@ -249,6 +301,7 @@ class Database:
         subject: str = "",
         sender: str = "",
         tags: str = "",
+        has_attachment: str = "",
         start_date: str = "",
         end_date: str = "",
         added_start: str = "",
@@ -278,6 +331,10 @@ class Database:
         if tags:
             conditions.append("tags LIKE ?")
             params.append(f"%{tags}%")
+        if has_attachment == "yes":
+            conditions.append("has_attachment = 1")
+        elif has_attachment == "no":
+            conditions.append("has_attachment = 0")
         if start_date:
             conditions.append("sent_timestamp >= ?")
             params.append(start_date)
