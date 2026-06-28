@@ -182,6 +182,12 @@ class App(TkinterDnD.Tk):
         self._config.save(self._config_path)
         self._update_controls()
 
+        # Auto-start monitoring once an archive opens successfully. Skip silently
+        # when no watch paths are configured so the user isn't shown a warning
+        # they didn't trigger; they can configure paths and start manually.
+        if self._config.watch_paths:
+            self._start_monitoring()
+
     def _eject_bundle(self):
         if self._running:
             self._stop_monitoring()
