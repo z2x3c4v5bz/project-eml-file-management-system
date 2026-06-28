@@ -101,7 +101,7 @@ The main panel shows the last 100 processed files, sorted by **Subject** then **
 | Subject | Email subject line with reply/forward prefixes removed |
 | Sender | Display name or local-part of the From address |
 | Sent Date | Timestamp displayed as `YYYY-MM-DD HH:mm:ss` |
-| Tags | User-defined tags. **Click a cell** to open the tag editor where you can type comma-separated tags and re-use previously applied tags from the list. To edit tags for **multiple rows at once**, select them (Ctrl+click or Shift+click), then right-click → **Edit Tags**. |
+| Tags | User-defined tags. **Click a cell** to open the tag editor where you can type comma-separated tags and re-use previously applied tags from the list. To edit tags for **multiple rows at once**, select them (Ctrl+click or Shift+click), then right-click → **Edit Tags**. New emails are **auto-tagged** on import — see [Automatic Tagging](#automatic-tagging). |
 | Open | **Click "Open ↗"** to open the `.eml` file in your default email client (Outlook, etc.), where you can read, reply, or forward. |
 | Status | `processed`, `duplicate`, or `error` |
 
@@ -115,14 +115,18 @@ The main panel shows the last 100 processed files, sorted by **Subject** then **
 
 ## Search & Filter
 
-The filter bar has four rows:
+The filter bar has six rows:
 
 | Row | Fields |
 |---|---|
-| 1 | **Keyword** — searches Subject, Sender, and Tags simultaneously |
+| 1 | **Keyword** — searches Subject, Sender, and Tags simultaneously; **Tags** — dropdown of all previously used tags |
 | 2 | **Type** — select `Re`, `Fw`, or blank; **Subject** — partial-text filter |
-| 3 | **Sender** — partial-text filter; **Sent From / To** — date range in `YYYYMMDD` format |
-| 4 | **Tags** — dropdown of all previously used tags; **Search**, **Clear**, **Export CSV…** buttons and result count |
+| 3 | **Sender** — partial-text filter; **Sent From / To** — filter by the date the email was *sent*, in `YYYYMMDD` format |
+| 4 | **Added From / To** — filter by the date the email was *added to the archive* (its `parsed_at` value), in `YYYYMMDD` format |
+| 5 | **Search**, **Clear**, **Export CSV…** buttons (right-aligned) |
+| 6 | Result count (right-aligned) |
+
+Both date ranges are interpreted in the configured timezone (shown in each field's label) and compared against values stored in UTC. **Sent From / To** filters on when the email was originally sent; **Added From / To** filters on when it was ingested into the archive — useful for reviewing everything imported on a given day regardless of when it was sent.
 
 All active filters combine with AND logic. The Tags dropdown is populated from existing tag values automatically when opened. Search results stay visible until you click **Clear** — they are not reset automatically.
 
@@ -259,6 +263,14 @@ Rules applied:
 - Runs of whitespace or underscores are collapsed to a single `_`
 - Length is capped at the **Filename Length Limit** setting
 - If a name already exists, a counter suffix is appended (`_2`, `_3`, …)
+
+---
+
+## Automatic Tagging
+
+When a new email is added to the archive, the app checks whether any email already in the database shares the **same conversation subject** — that is, the subject after reply/forward prefixes (`Re:`, `FW:`, `Fwd:`, `答复:`, `转发:`, etc.) are stripped, the same grouping used for folder names. If a match is found and it has tags, the new email automatically inherits those tags (the most recently added matching email wins).
+
+This keeps a conversation consistently tagged without re-entering tags for every reply or forward. For example, once you tag `Re: Invoice` with `finance`, a later `Fwd: Invoice` is tagged `finance` automatically. You can still edit or clear the tags on any row afterward.
 
 ---
 

@@ -124,6 +124,19 @@ class TestSearch:
         assert len(db.search(start_date="20260624", end_date="20260623")) == 0
         assert len(db.search(start_date="20260625", end_date="20260625")) == 0
 
+    def test_added_date_range(self, db):
+        # parsed_at default is 2026-06-24T14:30:55Z
+        db.insert(_record())
+        assert len(db.search(added_start="2026-06-24T00:00:00Z", added_end="2026-06-24T23:59:59Z")) == 1
+        assert len(db.search(added_start="2026-06-25T00:00:00Z")) == 0
+        assert len(db.search(added_end="2026-06-23T23:59:59Z")) == 0
+
+    def test_added_date_range_independent_of_sent(self, db):
+        # Sent in January but added in June: only the Added filter should match June.
+        db.insert(_record(sent_timestamp="20260101000000", parsed_at="2026-06-24T14:30:55Z"))
+        assert len(db.search(added_start="2026-06-24T00:00:00Z", added_end="2026-06-24T23:59:59Z")) == 1
+        assert len(db.search(start_date="20260624000000")) == 0  # nothing sent on the 24th
+
     def test_empty_filter_returns_all(self, db):
         for i in range(3):
             db.insert(_record(message_id=f"<m{i}@x.com>", sha256=f"{'a' * 56}{i:08d}"))
@@ -141,6 +154,29 @@ class TestSearch:
         # Newest date sorts first within the same pure_subject (DESC)
         assert rows[0]["sent_timestamp"] > rows[1]["sent_timestamp"]
         assert rows[2]["pure_subject"] == "Zebra"
+
+
+class TestFindTagsForSubject:
+    def test_returns_tags_of_matching_pure_subject(self, db):
+        row_id = db.insert(_record(message_id="<a@x>", sha256="a" * 64, subject="Invoice"))
+        db.update_tags(row_id, "finance, urgent")
+        assert db.find_tags_for_subject("Invoice") == "finance, urgent"
+
+    def test_matches_across_reply_prefix(self, db):
+        # "Re: Invoice" strips to pure_subject "Invoice", so it matches a plain "Invoice".
+        row_id = db.insert(_record(message_id="<a@x>", sha256="a" * 64, subject="Re: Invoice"))
+        db.update_tags(row_id, "finance")
+        assert db.find_tags_for_subject("Invoice") == "finance"
+
+    def test_returns_none_when_no_tags(self, db):
+        db.insert(_record(message_id="<a@x>", sha256="a" * 64, subject="Invoice"))
+        assert db.find_tags_for_subject("Invoice") is None
+
+    def test_returns_none_for_unknown_subject(self, db):
+        assert db.find_tags_for_subject("Nonexistent") is None
+
+    def test_empty_subject_returns_none(self, db):
+        assert db.find_tags_for_subject("") is None
 
 
 class TestIntegrity:

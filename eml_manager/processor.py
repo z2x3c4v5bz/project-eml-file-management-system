@@ -56,6 +56,13 @@ class Processor:
 
         file_path.replace(dest_path)
 
+        # Inherit tags from an existing email in the same conversation group (same
+        # subject with reply/forward prefixes stripped), so related mail is tagged
+        # consistently without manual re-entry.
+        auto_tags = self.db.find_tags_for_subject(pure_subject)
+        if auto_tags:
+            logger.info("Auto-tagged %s with '%s' from matching subject", filename, auto_tags)
+
         row_id = self.db.insert(
             {
                 "message_id": meta["message_id"],
@@ -70,6 +77,7 @@ class Processor:
                 "parsed_at": parsed_at,
                 "status": "processed",
                 "error_message": None,
+                "tags": auto_tags,
             }
         )
         logger.info("Processed %s → %s (id=%d)", file_path.name, dest_path, row_id)

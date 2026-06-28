@@ -68,6 +68,15 @@ def _local_date_to_utc(date_str: str, tz_name: str, end_of_day: bool = False) ->
     return dt_local.astimezone(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
+def _local_date_to_utc_iso(date_str: str, tz_name: str, end_of_day: bool = False) -> str:
+    """Convert a YYYYMMDD local date to a UTC ISO-8601 string (YYYY-MM-DDTHH:MM:SSZ),
+    matching the format of the stored parsed_at ('Added') column."""
+    utc = _local_date_to_utc(date_str, tz_name, end_of_day)
+    if not (len(utc) == 14 and utc.isdigit()):
+        return ""
+    return f"{utc[:4]}-{utc[4:6]}-{utc[6:8]}T{utc[8:10]}:{utc[10:12]}:{utc[12:14]}Z"
+
+
 class _TagEditDialog(tk.Toplevel):
     """Modal dialog for editing comma-separated tags with quick-pick from prior tags."""
 
@@ -179,6 +188,9 @@ class MainView(ttk.Frame):
         self._sent_from_label_var.set(
             f"Sent From (YYYYMMDD, {_tz_label(config.timezone)}):"
         )
+        self._added_from_label_var.set(
+            f"Added From (YYYYMMDD, {_tz_label(config.timezone)}):"
+        )
         self.refresh()
 
     def _get_all_tags_merged(self) -> list[str]:
@@ -234,12 +246,20 @@ class MainView(ttk.Frame):
         bar = ttk.LabelFrame(self, text="Search & Filter", padding=(6, 4))
         bar.pack(fill=tk.X, padx=4, pady=2)
 
-        # Row 1: Keyword
+        # Row 1: Keyword | Tags
         r1 = ttk.Frame(bar)
         r1.pack(fill=tk.X, pady=(0, 3))
         ttk.Label(r1, text="Keyword:").pack(side=tk.LEFT)
         self._kw_var = tk.StringVar()
-        ttk.Entry(r1, textvariable=self._kw_var, width=60).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Entry(r1, textvariable=self._kw_var, width=48).pack(side=tk.LEFT, padx=(2, 12))
+        ttk.Label(r1, text="Tags:").pack(side=tk.LEFT)
+        self._tags_var = tk.StringVar()
+        self._tags_cb = ttk.Combobox(
+            r1, textvariable=self._tags_var,
+            state="readonly", width=22,
+            postcommand=self._refresh_tags_dropdown,
+        )
+        self._tags_cb.pack(side=tk.LEFT, padx=(2, 0))
 
         # Row 2: Type | Subject
         r2 = ttk.Frame(bar)
@@ -270,23 +290,31 @@ class MainView(ttk.Frame):
         self._end_var = tk.StringVar()
         ttk.Entry(r3, textvariable=self._end_var, width=10).pack(side=tk.LEFT, padx=(2, 0))
 
-        # Row 4: Tags (left) | Search / Clear / Export CSV / count (right)
+        # Row 4: Added From | To (filters on parsed_at, the date the .eml was added)
         r4 = ttk.Frame(bar)
-        r4.pack(fill=tk.X, pady=(3, 0))
-        ttk.Label(r4, text="Tags:").pack(side=tk.LEFT)
-        self._tags_var = tk.StringVar()
-        self._tags_cb = ttk.Combobox(
-            r4, textvariable=self._tags_var,
-            state="readonly", width=22,
-            postcommand=self._refresh_tags_dropdown,
+        r4.pack(fill=tk.X, pady=(0, 3))
+        self._added_from_label_var = tk.StringVar(
+            value=f"Added From (YYYYMMDD, {_tz_label(self._config.timezone)}):"
         )
-        self._tags_cb.pack(side=tk.LEFT, padx=(2, 0))
-        # Pack right-side items right-to-left so visual order is Search|Clear|Export|count
+        ttk.Label(r4, textvariable=self._added_from_label_var).pack(side=tk.LEFT)
+        self._added_start_var = tk.StringVar()
+        ttk.Entry(r4, textvariable=self._added_start_var, width=10).pack(side=tk.LEFT, padx=(2, 4))
+        ttk.Label(r4, text="To:").pack(side=tk.LEFT)
+        self._added_end_var = tk.StringVar()
+        ttk.Entry(r4, textvariable=self._added_end_var, width=10).pack(side=tk.LEFT, padx=(2, 0))
+
+        # Row 5: action buttons, right-aligned (visual order Search | Clear | Export CSV)
+        r5 = ttk.Frame(bar)
+        r5.pack(fill=tk.X, pady=(3, 0))
+        ttk.Button(r5, text="Export CSV...", command=self._export_csv).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(r5, text="Clear", command=self._clear_filter).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(r5, text="Search", command=self._search).pack(side=tk.RIGHT, padx=2)
+
+        # Row 6: result count, right-aligned
+        r6 = ttk.Frame(bar)
+        r6.pack(fill=tk.X, pady=(2, 0))
         self._count_var = tk.StringVar(value="")
-        ttk.Label(r4, textvariable=self._count_var, anchor=tk.E).pack(side=tk.RIGHT, padx=(4, 0))
-        ttk.Button(r4, text="Export CSV...", command=self._export_csv).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(r4, text="Clear", command=self._clear_filter).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(r4, text="Search", command=self._search).pack(side=tk.RIGHT, padx=(0, 2))
+        ttk.Label(r6, textvariable=self._count_var, anchor=tk.E).pack(side=tk.RIGHT)
 
     def _build_table(self):
         frame = ttk.Frame(self)
@@ -370,6 +398,8 @@ class MainView(ttk.Frame):
             tags=self._tags_var.get().strip(),
             start_date=_local_date_to_utc(self._start_var.get().strip(), tz, end_of_day=False),
             end_date=_local_date_to_utc(self._end_var.get().strip(), tz, end_of_day=True),
+            added_start=_local_date_to_utc_iso(self._added_start_var.get().strip(), tz, end_of_day=False),
+            added_end=_local_date_to_utc_iso(self._added_end_var.get().strip(), tz, end_of_day=True),
             limit=500,
         )
         self._populate(rows)
@@ -384,6 +414,8 @@ class MainView(ttk.Frame):
         self._tags_var.set("")
         self._start_var.set("")
         self._end_var.set("")
+        self._added_start_var.set("")
+        self._added_end_var.set("")
         self.refresh()
 
     def _refresh_tags_dropdown(self):

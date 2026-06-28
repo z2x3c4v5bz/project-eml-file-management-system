@@ -199,6 +199,24 @@ class Database:
         conn.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", row_ids)
         conn.commit()
 
+    def find_tags_for_subject(self, pure_subject: str) -> Optional[str]:
+        """Return the tags of the most recently added message sharing this pure_subject.
+
+        Used to auto-tag a newly ingested email so it inherits the tags already
+        applied to others in the same conversation group (subject with reply/forward
+        prefixes stripped). Returns None when no tagged sibling exists.
+        """
+        if not pure_subject:
+            return None
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT tags FROM messages "
+            "WHERE pure_subject = ? AND tags IS NOT NULL AND tags != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (pure_subject,),
+        ).fetchone()
+        return row[0] if row else None
+
     def get_all_tags(self) -> list[str]:
         """Return a sorted deduplicated list of every individual tag in the database."""
         conn = self._conn()
@@ -233,6 +251,8 @@ class Database:
         tags: str = "",
         start_date: str = "",
         end_date: str = "",
+        added_start: str = "",
+        added_end: str = "",
         limit: int = 500,
         offset: int = 0,
     ) -> List[Dict]:
@@ -267,6 +287,14 @@ class Database:
                 end_date = end_date + "235959"
             conditions.append("sent_timestamp <= ?")
             params.append(end_date)
+        # parsed_at is stored as a UTC ISO-8601 string (YYYY-MM-DDTHH:MM:SSZ), which
+        # sorts lexicographically, so added_start/added_end are compared as plain text.
+        if added_start:
+            conditions.append("parsed_at >= ?")
+            params.append(added_start)
+        if added_end:
+            conditions.append("parsed_at <= ?")
+            params.append(added_end)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         sql = (
             f"SELECT * FROM messages {where} "

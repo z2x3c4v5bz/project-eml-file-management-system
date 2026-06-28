@@ -108,6 +108,56 @@ class TestDuplicateDetection:
         assert len(db.recent(10)) == 1  # still only one record
 
 
+class TestAutoTagBySubject:
+    def _write_eml(self, dest: pathlib.Path, subject: str, msg_id: str, body: str) -> pathlib.Path:
+        dest.write_text(
+            "From: Carol <carol@example.com>\n"
+            "To: Dave <dave@example.com>\n"
+            f"Subject: {subject}\n"
+            "Date: Tue, 25 Jun 2026 09:00:00 +0000\n"
+            f"Message-ID: <{msg_id}>\n"
+            "MIME-Version: 1.0\n"
+            "Content-Type: text/plain; charset=UTF-8\n"
+            f"\n{body}\n",
+            encoding="utf-8",
+        )
+        return dest
+
+    def test_new_email_inherits_tags_from_same_subject(self, env):
+        cfg, db, proc, tmp, bundle = env
+        # First email of the conversation, tagged by the user.
+        src1 = _copy("simple.eml", tmp / "watch")
+        res1 = proc.process(src1)
+        db.update_tags(res1["id"], "finance, urgent")
+
+        # A different email with the same subject is added → inherits the tags.
+        src2 = self._write_eml(tmp / "watch" / "reply.eml", "Re: Hello World", "second@x", "Another one")
+        res2 = proc.process(src2)
+        row = next(r for r in db.recent(10) if r["id"] == res2["id"])
+        assert row["tags"] == "finance, urgent"
+
+    def test_no_tags_when_subject_differs(self, env):
+        cfg, db, proc, tmp, bundle = env
+        src1 = _copy("simple.eml", tmp / "watch")
+        res1 = proc.process(src1)
+        db.update_tags(res1["id"], "finance")
+
+        src2 = self._write_eml(tmp / "watch" / "other.eml", "Different Topic", "second@x", "Body")
+        res2 = proc.process(src2)
+        row = next(r for r in db.recent(10) if r["id"] == res2["id"])
+        assert not row["tags"]
+
+    def test_no_tags_when_match_is_untagged(self, env):
+        cfg, db, proc, tmp, bundle = env
+        src1 = _copy("simple.eml", tmp / "watch")
+        proc.process(src1)  # not tagged
+
+        src2 = self._write_eml(tmp / "watch" / "reply.eml", "Re: Hello World", "second@x", "Another")
+        res2 = proc.process(src2)
+        row = next(r for r in db.recent(10) if r["id"] == res2["id"])
+        assert not row["tags"]
+
+
 class TestEdgeCases:
     def test_missing_date_header(self, env):
         cfg, db, proc, tmp, bundle = env
