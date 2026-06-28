@@ -47,6 +47,13 @@ def test_parse_no_attachment_on_plain_email():
     assert result["has_attachment"] is False
 
 
+def test_parse_inline_image_is_not_attachment():
+    # An HTML email with an inline image (Content-Disposition: inline + Content-ID)
+    # is a body resource, not an attachment, and must not be flagged.
+    result = parse_eml(FIXTURES / "inline-image.eml")
+    assert result["has_attachment"] is False
+
+
 def test_decode_mime_words_base64():
     encoded = "=?UTF-8?b?SGVsbG8gV29ybGQ=?="
     assert decode_mime_words(encoded) == "Hello World"

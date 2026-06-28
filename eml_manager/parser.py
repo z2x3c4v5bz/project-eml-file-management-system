@@ -53,23 +53,35 @@ def decode_mime_words(header: Optional[str]) -> str:
 
 
 def has_attachments(msg) -> bool:
-    """Return True if the parsed message carries at least one attachment.
+    """Return True if the parsed message carries at least one real attachment.
 
-    A part counts as an attachment when its Content-Disposition is "attachment",
-    or when it advertises a filename (covers clients that omit the disposition
-    header but still name the file). Inline-only parts without a filename — the
-    plain-text/HTML alternatives of an ordinary email — are ignored.
+    A part is a real attachment only when its Content-Disposition is "attachment".
+    Parts that merely carry a filename are *not* enough: HTML emails routinely
+    embed inline images (signature logos, pictures referenced by Content-ID),
+    which are marked "inline" and/or have a Content-ID and would otherwise be
+    mistaken for attachments — especially in reply/forward threads where every
+    participant's inline signature graphics pile up in the quoted history.
+
+    As a fallback for older clients that omit the disposition header entirely, a
+    part still counts when it names a file, is not inline, has no Content-ID, and
+    is not a text body part.
     """
     if not msg.is_multipart():
         return False
     for part in msg.walk():
         if part.is_multipart():
             continue
-        disposition = str(part.get("Content-Disposition") or "").lower()
-        if "attachment" in disposition:
+        disposition = str(part.get("Content-Disposition") or "").strip().lower()
+        if disposition.startswith("attachment"):
             return True
-        if part.get_filename():
-            return True
+        # Inline content (embedded images, signature logos) is not an attachment.
+        if disposition.startswith("inline") or part.get("Content-ID"):
+            continue
+        # No disposition header: treat as an attachment only if it names a file
+        # and isn't a plain-text/HTML body part.
+        if not disposition and part.get_filename():
+            if part.get_content_type() not in ("text/plain", "text/html"):
+                return True
     return False
 
 

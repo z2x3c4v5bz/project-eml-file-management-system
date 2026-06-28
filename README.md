@@ -97,6 +97,7 @@ The main panel shows the last 100 processed files, sorted by **Subject** then **
 
 | Column | Description |
 |---|---|
+| 📎 | A paperclip if the email carries at least one attachment, blank otherwise |
 | Type | `Re` if the email is a reply, `Fw` if it was forwarded, blank otherwise |
 | Subject | Email subject line with reply/forward prefixes removed |
 | Sender | Display name or local-part of the From address |
@@ -119,14 +120,14 @@ The filter bar has six rows:
 
 | Row | Fields |
 |---|---|
-| 1 | **Keyword** — searches Subject, Sender, and Tags simultaneously; **Tags** — dropdown of all previously used tags |
+| 1 | **Keyword** — searches Subject, Sender, and Tags simultaneously; **Tags** — dropdown of all previously used tags; **Attachment** — dropdown to show only emails *with* or *without* an attachment (`Any` by default) |
 | 2 | **Subject** — partial-text filter; **Sender** — partial-text filter |
 | 3 | **Sent From / To** — filter by the date the email was *sent*, in `YYYYMMDD` format |
 | 4 | **Added From / To** — filter by the date the email was *added to the archive* (its `parsed_at` value), in `YYYYMMDD` format |
 | 5 | **Search**, **Clear**, **Export CSV…** buttons (right-aligned) |
-| 6 | Result count (right-aligned) |
+| 6 | Configured timezone (left) and result count (right) |
 
-Both date ranges are interpreted in the configured timezone (shown in each field's label) and compared against values stored in UTC. **Sent From / To** filters on when the email was originally sent; **Added From / To** filters on when it was ingested into the archive — useful for reviewing everything imported on a given day regardless of when it was sent.
+Both date ranges are interpreted in the configured timezone (shown at the bottom of the bar) and compared against values stored in UTC. **Sent From / To** filters on when the email was originally sent; **Added From / To** filters on when it was ingested into the archive — useful for reviewing everything imported on a given day regardless of when it was sent.
 
 All active filters combine with AND logic. The Tags dropdown is populated from existing tag values automatically when opened. Search results stay visible until you click **Clear** — they are not reset automatically.
 
@@ -216,7 +217,7 @@ Importing never overwrites the currently mounted archive — it creates a separa
 
 ## Command-Line Interface
 
-All features are also available without the GUI. Commands that read or write the archive (`scan`, `import`, `export`, `db-check`) operate on a bundle. Pass `--bundle PATH` to choose one, or omit it to use the archive last mounted in the GUI.
+All features are also available without the GUI. Commands that read or write the archive (`scan`, `import`, `export`, `db-check`, `backfill-attachments`) operate on a bundle. Pass `--bundle PATH` to choose one, or omit it to use the archive last mounted in the GUI.
 
 ```bat
 rem Scan a directory and process all .eml files found
@@ -234,6 +235,12 @@ eml-manager --bundle C:\path\to\MyArchive export --keyword "invoice" --out invoi
 rem Verify database integrity
 eml-manager --bundle C:\path\to\MyArchive db-check
 
+rem Backfill the has_attachment flag on records imported before that column existed
+eml-manager --bundle C:\path\to\MyArchive backfill-attachments
+
+rem Re-scan every record, not just those still flagged as having no attachment
+eml-manager --bundle C:\path\to\MyArchive backfill-attachments --force
+
 rem Use a custom config file
 eml-manager --config C:\path\to\config.yml --bundle C:\path\to\MyArchive db-check
 
@@ -242,6 +249,17 @@ eml-manager --verbose --bundle C:\path\to\MyArchive scan --path C:\Users\you\Dow
 ```
 
 Exit codes: `0` = success, non-zero = error.
+
+The `backfill-attachments` command re-reads each archived `.eml` and recomputes its attachment flag. It is useful in two cases:
+
+- **Archives created before attachment tracking was added.** The database is upgraded automatically when such an archive is opened, but existing records start out flagged as having no attachment. The default run inspects only records still flagged `0` (cheap and repeatable) and fills in the ones that do have attachments.
+- **Records flagged incorrectly by an earlier version.** Older builds mistook inline images (signature logos, pictures embedded in HTML) for attachments. To clear those false positives you must re-scan **every** record — including ones currently flagged as having an attachment — so use `--force`:
+
+  ```bat
+  eml-manager --bundle C:\path\to\MyArchive backfill-attachments --force
+  ```
+
+Missing or unreadable files are skipped.
 
 ---
 

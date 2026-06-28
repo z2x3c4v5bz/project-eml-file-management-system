@@ -1,0 +1,22 @@
+From: Carol <carol@example.com>
+To: Dave <dave@example.com>
+Subject: Re: Project update
+Date: Wed, 24 Jun 2026 15:00:00 +0000
+Message-ID: <inline123@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/html; charset=UTF-8
+
+<html><body><p>Thanks!</p><img src="cid:logo123"></body></html>
+
+--BOUNDARY
+Content-Type: image/png; name="logo.png"
+Content-Disposition: inline; filename="logo.png"
+Content-ID: <logo123>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+
+--BOUNDARY--
