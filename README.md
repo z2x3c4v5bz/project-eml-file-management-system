@@ -120,8 +120,8 @@ The filter bar has six rows:
 | Row | Fields |
 |---|---|
 | 1 | **Keyword** — searches Subject, Sender, and Tags simultaneously; **Tags** — dropdown of all previously used tags |
-| 2 | **Type** — select `Re`, `Fw`, or blank; **Subject** — partial-text filter |
-| 3 | **Sender** — partial-text filter; **Sent From / To** — filter by the date the email was *sent*, in `YYYYMMDD` format |
+| 2 | **Subject** — partial-text filter; **Sender** — partial-text filter |
+| 3 | **Sent From / To** — filter by the date the email was *sent*, in `YYYYMMDD` format |
 | 4 | **Added From / To** — filter by the date the email was *added to the archive* (its `parsed_at` value), in `YYYYMMDD` format |
 | 5 | **Search**, **Clear**, **Export CSV…** buttons (right-aligned) |
 | 6 | Result count (right-aligned) |

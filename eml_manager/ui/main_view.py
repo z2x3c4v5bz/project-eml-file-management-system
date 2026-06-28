@@ -185,12 +185,7 @@ class MainView(ttk.Frame):
     def update_config(self, config: Config) -> None:
         """Apply a new Config (e.g. after Settings save) and re-render all Sent Date cells."""
         self._config = config
-        self._sent_from_label_var.set(
-            f"Sent From (YYYYMMDD, {_tz_label(config.timezone)}):"
-        )
-        self._added_from_label_var.set(
-            f"Added From (YYYYMMDD, {_tz_label(config.timezone)}):"
-        )
+        self._tz_label_var.set(f"Timezone: {_tz_label(config.timezone)}")
         self.refresh()
 
     def _get_all_tags_merged(self) -> list[str]:
@@ -242,66 +237,63 @@ class MainView(ttk.Frame):
             side=tk.LEFT, padx=(4, 0)
         )
 
+    def _date_range(self, parent, start_var: tk.StringVar, end_var: tk.StringVar) -> ttk.Frame:
+        """A 'from [____] to [____]' pair packed into a single frame for grid placement."""
+        frame = ttk.Frame(parent)
+        ttk.Entry(frame, textvariable=start_var, width=10).pack(side=tk.LEFT)
+        ttk.Label(frame, text="to").pack(side=tk.LEFT, padx=6)
+        ttk.Entry(frame, textvariable=end_var, width=10).pack(side=tk.LEFT)
+        return frame
+
     def _build_filter_bar(self):
         bar = ttk.LabelFrame(self, text="Search & Filter", padding=(6, 4))
         bar.pack(fill=tk.X, padx=4, pady=2)
 
+        # Rows 1–4 live in a grid so labels and inputs line up in tidy columns:
+        # col 0/2 hold right-aligned labels, col 1/3 hold the matching inputs.
+        grid = ttk.Frame(bar)
+        grid.pack(fill=tk.X)
+        grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(3, weight=1)
+        lbl = dict(sticky=tk.E, padx=(0, 6), pady=3)
+        fld = dict(sticky=tk.EW, padx=(0, 18), pady=3)
+
         # Row 1: Keyword | Tags
-        r1 = ttk.Frame(bar)
-        r1.pack(fill=tk.X, pady=(0, 3))
-        ttk.Label(r1, text="Keyword:").pack(side=tk.LEFT)
+        ttk.Label(grid, text="Keyword:").grid(row=0, column=0, **lbl)
         self._kw_var = tk.StringVar()
-        ttk.Entry(r1, textvariable=self._kw_var, width=48).pack(side=tk.LEFT, padx=(2, 12))
-        ttk.Label(r1, text="Tags:").pack(side=tk.LEFT)
+        ttk.Entry(grid, textvariable=self._kw_var).grid(row=0, column=1, **fld)
+        ttk.Label(grid, text="Tags:").grid(row=0, column=2, **lbl)
         self._tags_var = tk.StringVar()
         self._tags_cb = ttk.Combobox(
-            r1, textvariable=self._tags_var,
-            state="readonly", width=22,
+            grid, textvariable=self._tags_var,
+            state="readonly",
             postcommand=self._refresh_tags_dropdown,
         )
-        self._tags_cb.pack(side=tk.LEFT, padx=(2, 0))
+        self._tags_cb.grid(row=0, column=3, **fld)
 
-        # Row 2: Type | Subject
-        r2 = ttk.Frame(bar)
-        r2.pack(fill=tk.X, pady=(0, 3))
-        ttk.Label(r2, text="Type:").pack(side=tk.LEFT)
-        self._type_var = tk.StringVar()
-        ttk.Combobox(
-            r2, textvariable=self._type_var, values=["", "Re", "Fw"],
-            state="readonly", width=5,
-        ).pack(side=tk.LEFT, padx=(2, 12))
-        ttk.Label(r2, text="Subject:").pack(side=tk.LEFT)
+        # Row 2: Subject | Sender
+        ttk.Label(grid, text="Subject:").grid(row=1, column=0, **lbl)
         self._subj_var = tk.StringVar()
-        ttk.Entry(r2, textvariable=self._subj_var, width=48).pack(side=tk.LEFT, padx=(2, 0))
-
-        # Row 3: Sender | Sent From | To
-        r3 = ttk.Frame(bar)
-        r3.pack(fill=tk.X, pady=(0, 3))
-        ttk.Label(r3, text="Sender:").pack(side=tk.LEFT)
+        ttk.Entry(grid, textvariable=self._subj_var).grid(row=1, column=1, **fld)
+        ttk.Label(grid, text="Sender:").grid(row=1, column=2, **lbl)
         self._sndr_var = tk.StringVar()
-        ttk.Entry(r3, textvariable=self._sndr_var, width=30).pack(side=tk.LEFT, padx=(2, 12))
-        self._sent_from_label_var = tk.StringVar(
-            value=f"Sent From (YYYYMMDD, {_tz_label(self._config.timezone)}):"
-        )
-        ttk.Label(r3, textvariable=self._sent_from_label_var).pack(side=tk.LEFT)
-        self._start_var = tk.StringVar()
-        ttk.Entry(r3, textvariable=self._start_var, width=10).pack(side=tk.LEFT, padx=(2, 4))
-        ttk.Label(r3, text="To:").pack(side=tk.LEFT)
-        self._end_var = tk.StringVar()
-        ttk.Entry(r3, textvariable=self._end_var, width=10).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Entry(grid, textvariable=self._sndr_var).grid(row=1, column=3, **fld)
 
-        # Row 4: Added From | To (filters on parsed_at, the date the .eml was added)
-        r4 = ttk.Frame(bar)
-        r4.pack(fill=tk.X, pady=(0, 3))
-        self._added_from_label_var = tk.StringVar(
-            value=f"Added From (YYYYMMDD, {_tz_label(self._config.timezone)}):"
+        # Row 3: Sent date range (filters on sent_timestamp), left-aligned
+        ttk.Label(grid, text="Sent:").grid(row=2, column=0, **lbl)
+        self._start_var = tk.StringVar()
+        self._end_var = tk.StringVar()
+        self._date_range(grid, self._start_var, self._end_var).grid(
+            row=2, column=1, sticky=tk.W, padx=(0, 18), pady=3
         )
-        ttk.Label(r4, textvariable=self._added_from_label_var).pack(side=tk.LEFT)
+
+        # Row 4: Added date range (filters on parsed_at, the date the .eml was added), left-aligned
+        ttk.Label(grid, text="Added:").grid(row=3, column=0, **lbl)
         self._added_start_var = tk.StringVar()
-        ttk.Entry(r4, textvariable=self._added_start_var, width=10).pack(side=tk.LEFT, padx=(2, 4))
-        ttk.Label(r4, text="To:").pack(side=tk.LEFT)
         self._added_end_var = tk.StringVar()
-        ttk.Entry(r4, textvariable=self._added_end_var, width=10).pack(side=tk.LEFT, padx=(2, 0))
+        self._date_range(grid, self._added_start_var, self._added_end_var).grid(
+            row=3, column=1, sticky=tk.W, padx=(0, 18), pady=3
+        )
 
         # Row 5: action buttons, right-aligned (visual order Search | Clear | Export CSV)
         r5 = ttk.Frame(bar)
@@ -310,9 +302,13 @@ class MainView(ttk.Frame):
         ttk.Button(r5, text="Clear", command=self._clear_filter).pack(side=tk.RIGHT, padx=2)
         ttk.Button(r5, text="Search", command=self._search).pack(side=tk.RIGHT, padx=2)
 
-        # Row 6: result count, right-aligned
+        # Row 6: timezone (left) | result count (right)
         r6 = ttk.Frame(bar)
         r6.pack(fill=tk.X, pady=(2, 0))
+        self._tz_label_var = tk.StringVar(
+            value=f"Timezone: {_tz_label(self._config.timezone)}"
+        )
+        ttk.Label(r6, textvariable=self._tz_label_var, anchor=tk.W).pack(side=tk.LEFT)
         self._count_var = tk.StringVar(value="")
         ttk.Label(r6, textvariable=self._count_var, anchor=tk.E).pack(side=tk.RIGHT)
 
@@ -392,7 +388,6 @@ class MainView(ttk.Frame):
         tz = self._config.timezone
         rows = self._db.search(
             keyword=self._kw_var.get().strip(),
-            mail_type=self._type_var.get().strip(),
             subject=self._subj_var.get().strip(),
             sender=self._sndr_var.get().strip(),
             tags=self._tags_var.get().strip(),
@@ -408,7 +403,6 @@ class MainView(ttk.Frame):
     def _clear_filter(self):
         self._searching = False
         self._kw_var.set("")
-        self._type_var.set("")
         self._subj_var.set("")
         self._sndr_var.set("")
         self._tags_var.set("")
