@@ -18,6 +18,7 @@ from typing import List
 from ..config import Config
 from ..database import Database
 from ..normalizer import strip_subject_prefixes
+from .date_picker import DatePicker
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +239,16 @@ class MainView(ttk.Frame):
         )
 
     def _date_range(self, parent, start_var: tk.StringVar, end_var: tk.StringVar) -> ttk.Frame:
-        """A 'from [____] to [____]' pair packed into a single frame for grid placement."""
+        """A 'from [date-picker] to [date-picker]' pair packed into one frame for grid placement.
+
+        Each DatePicker stores its selection as a canonical YYYYMMDD string in the
+        bound StringVar (empty when unset), so _search() and _clear_filter() — which
+        already read/reset these vars — work unchanged.
+        """
         frame = ttk.Frame(parent)
-        ttk.Entry(frame, textvariable=start_var, width=10).pack(side=tk.LEFT)
+        DatePicker(frame, textvariable=start_var).pack(side=tk.LEFT)
         ttk.Label(frame, text="to").pack(side=tk.LEFT, padx=6)
-        ttk.Entry(frame, textvariable=end_var, width=10).pack(side=tk.LEFT)
+        DatePicker(frame, textvariable=end_var).pack(side=tk.LEFT)
         return frame
 
     def _build_filter_bar(self):
