@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["eml_manager*"]
 
+[tool.setuptools.package-data]
+eml_manager = ["resources/*.ico"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

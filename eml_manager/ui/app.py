@@ -1,7 +1,9 @@
+import ctypes
 import datetime
 import logging
 import pathlib
 import queue
+import sys
 import threading
 import tkinter as tk
 import zipfile
@@ -22,9 +24,50 @@ logger = logging.getLogger(__name__)
 
 _STATUS_COLORS = {"Running": "green", "Idle": "orange", "Stopped": "red"}
 
+# Unique per-application identity so Windows shows our branded icon on the
+# taskbar instead of grouping the process under the generic Python host.
+_APP_USER_MODEL_ID = "z2x3c4v5bz.emlmanager.v1"
+# Standard resource path (CAD §5.1 / §5.9), relative to the eml_manager package
+# so it ships inside wheel installs as well as source checkouts.
+_ICON_RELPATH = ("resources", "app_icon.ico")
+
+
+def _resource_path(*parts: str) -> pathlib.Path:
+    """Resolve a packaged resource for script, wheel, and PyInstaller EXE modes.
+
+    PyInstaller unpacks data files to a temp dir exposed as ``sys._MEIPASS``
+    (under the ``eml_manager`` prefix used by ``--add-data``); otherwise the
+    resources live inside the installed/checked-out package directory, one
+    level above this file: ``eml_manager/ui/app.py`` -> ``eml_manager/``.
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    if base is not None:
+        return pathlib.Path(base, "eml_manager", *parts)
+    pkg_root = pathlib.Path(__file__).resolve().parents[1]
+    return pkg_root.joinpath(*parts)
+
+
+def _set_app_user_model_id(app_id: str) -> None:
+    """Register an explicit AppUserModelID so the custom taskbar icon shows.
+
+    Without this, Windows attributes the window to the python.exe host and
+    displays the default Python icon on the taskbar. No-op off Windows or on
+    shells lacking the shell32 entry point.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except (AttributeError, OSError):
+        logger.debug("Could not set AppUserModelID", exc_info=True)
+
 
 class App(TkinterDnD.Tk):
     def __init__(self, config: Config, config_path: pathlib.Path):
+        # Must run before the Tk window is created so Windows associates this
+        # process (and its taskbar button) with our branded icon.
+        _set_app_user_model_id(_APP_USER_MODEL_ID)
+
         super().__init__()
 
         self._config = config
@@ -40,6 +83,7 @@ class App(TkinterDnD.Tk):
 
         self.title("EML File Manager")
         self.minsize(800, 500)
+        self._apply_window_icon()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._build_ui()
@@ -57,6 +101,21 @@ class App(TkinterDnD.Tk):
             p = pathlib.Path(self._config.active_bundle)
             if p.exists():
                 self._mount_bundle(p)
+
+    def _apply_window_icon(self):
+        """Apply the branded .ico to the title bar and all future toplevels.
+
+        ``default=`` makes child windows (dialogs) inherit the icon too. A
+        missing or unreadable icon is logged and ignored — the app still runs.
+        """
+        icon_path = _resource_path(*_ICON_RELPATH)
+        if not icon_path.exists():
+            logger.warning("Application icon not found at %s", icon_path)
+            return
+        try:
+            self.iconbitmap(default=str(icon_path))
+        except tk.TclError:
+            logger.warning("Failed to apply window icon from %s", icon_path, exc_info=True)
 
     # ------------------------------------------------------------------ build
 
